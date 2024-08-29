@@ -8,12 +8,75 @@
 #pch_lut: ../28tsmc/pch_lut.csv
 #bsim4-params: ../28tsmc/bsim4_parameters_std.csv
 
-nch_lut: ../test/test_nch_lut.csv
-ref_width: 3e-5
-bsim4-params: ../test/test_bsim4_params.csv
+nch_lut: 
+  path: ../test/test_nch_lut.csv
+  # match to lut csv header - no need to change
+  varmap:
+    vgs: vgs_n
+    lch: length_wave
+    weff: weff_n
+    leff: leff_n
+    vgseff: vgseff_n
+    vds: vds_n
+    vdsat: vdsat_n
+    vsb: vsb_n
+    vbseff: vbseff_n
+    vth: vth_n
+    qg: qg_n
+    qd: qd_n
+    qs: qs_n
+    gm: gm_n
+    gds: gds_n
+    ids: id_n
+    jd: jd_n
+    cgs: cgs_n
+    cgd: cgd_n
+    cdb: cdb_n
+    csb: csb_n
+    cgg: cgg_n
+    gmoverid: gmoverid_n
+    ft: ft_n
+    av: av_n
+    fom_bw: FoM_BW_n
+    fom_nbw: FoM_Nbw_n
+    
+bsim4-params: 
+  path: ../test/test_bsim4_params.csv
+  nch-varmap:
+    u0: U0_n
+    lp: LP_n 
+    uq: UA_n 
+    vfb: VFB_n 
+    phis: PHIs_n 
+    eu: EU_n
+    c0: C0_n,
+    uc: UC_n
+    ud: UD_n 
+    toxe: TOXE_n 
+    epsrox: EPSROX_n
+    af: AF_n
+    ef: EF_n
+    ntnoi: NTNOI_n
+    
+  pch-varmap:
+    c0: C0_p
+    u0: U0_p
+    lp: LP_p
+    ua: UA_p 
+    vfb: VFB_p 
+    phis: PHIs_p 
+    eu: EU_p
+    uc: UC_p 
+    ud: UD_p 
+    toxe: TOXE_p 
+    epsrox: EPSROX_p
+    af: AF_p 
+    ef: EF_p
+    ntnoi: NTNOI_p
+
+ref_width: 3e-5 # reference channel width
 
 out-log: ./log
 
-# Trigger to return device geometries to output file
-inverse: True
+# return device geometries to output file
 out-geom: ./outdg

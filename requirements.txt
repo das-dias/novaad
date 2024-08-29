@@ -4,3 +4,6 @@ pyyaml
 plotly
 dash
 docopt
+scipy
+tabulate
+pydantic
