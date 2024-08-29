@@ -1,0 +1,14 @@
+# Author: Diogo Andre
+# Description: Config file for gmid tool
+# Date: 28-08-2024
+
+# Paths to input files
+nch_lut: ../28tsmc/nch_lut.csv
+pch_lut: ../28tsmc/pch_lut.csv
+bsim4-params: ../28tsmc/bsim4_parameters_std.csv
+
+out-log: ./log
+
+# Trigger to return device geometries to output file
+inverse: True
+out-geom: ./outdg
