@@ -3,9 +3,14 @@
 # Date: 28-08-2024
 
 # Paths to input files
-nch_lut: ../28tsmc/nch_lut.csv
-pch_lut: ../28tsmc/pch_lut.csv
-bsim4-params: ../28tsmc/bsim4_parameters_std.csv
+#ref_width: 3e-5
+#nch_lut: ../28tsmc/nch_lut.csv
+#pch_lut: ../28tsmc/pch_lut.csv
+#bsim4-params: ../28tsmc/bsim4_parameters_std.csv
+
+nch_lut: ../test/test_nch_lut.csv
+ref_width: 3e-5
+bsim4-params: ../test/test_bsim4_params.csv
 
 out-log: ./log
 
