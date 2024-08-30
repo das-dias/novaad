@@ -182,7 +182,7 @@ class Device:
       interpolated_idxs = []
       for i in range(len(target_df)):
         newdf = concat([newdf, bot_row.iloc[[i]], target_df.iloc[[i]], top_row.iloc[[i]]])
-        interpolated_idxs.append(i+1)
+        interpolated_idxs.append(i*3+1)
       newdf = newdf.reset_index(drop=False)
       newdf = newdf.interpolate(method=interp_method, order=order)
       # return only the interpolated values
