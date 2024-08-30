@@ -1,22 +1,30 @@
 #from pydantic import BaseModel
+
+import warnings
+
+
 from dataclasses import dataclass
-from pandas import DataFrame, read_csv
-from pandas.core.reshape.util import cartesian_product
 from pathlib import Path
-from typing import List, Tuple, Union, Optional
+from typing import List, Dict, Tuple, Union, Optional
 from enum import Enum, EnumMeta
 from numpy import ndarray, array, abs, squeeze
-from scipy.interpolate import interpn
+from scipy.interpolate import griddata
+from scipy.spatial.distance import cdist
+
+from pprint import pprint
 
 import pdb
+
+warnings.simplefilter(action='ignore', category=FutureWarning)
+from pandas import DataFrame, read_csv, concat
+from pandas.core.reshape.util import cartesian_product
 
 __cfg = "../novaad/cfg.yml"
 
 def input_referred_flicker_noise_psd(): pass
 
 def input_referred_thermal_noise_psd(): pass
-
-def interpolate(bot_row, top_row):pass
+  
 
 DeviceLutPath = Union[str, Path]
 
@@ -34,18 +42,9 @@ class BaseEnum(Enum, metaclass=MetaEnum):
 class DeviceType(BaseEnum):
   NMOS = "nch"
   PMOS = "pch"
-  
+
 @dataclass
-class DcOp:
-  vgs: Optional[Union[float, List]] = None
-  vds: Optional[Union[float, List]] = None
-  vsb: Optional[Union[float, List]] = None
-  id: Optional[Union[float, List]] = None
-  gm: Optional[Union[float, List]] = None
-  gds: Optional[Union[float, List]] = None
-  gmbs: Optional[Union[float, List]] = None
-  wch: Optional[Union[float, List]] = None
-  lch: Optional[Union[float, List]] = None
+class BaseParametricObject:
   
   def to_df(self) -> DataFrame:
     # generate list of lists
@@ -60,19 +59,50 @@ class DcOp:
       col: prod[columns.index(col)]
       for col in columns
     })
-  
+    
   def __array__(self) -> ndarray:
     return self.to_df().to_numpy()
 
   def to_array(self) -> ndarray:
     return self.__array__()
+
+@dataclass
+class Sizing(BaseParametricObject):
+  wch: Optional[Union[float, List[float]]] = None
+  lch: Optional[Union[float, List[float]]] = None
+  
+@dataclass
+class DcOp(BaseParametricObject):
+  vgs: Optional[Union[float, List[float]]] = None
+  vds: Optional[Union[float, List[float]]] = None
+  vsb: Optional[Union[float, List[float]]] = None
+  id: Optional[Union[float, List[float]]] = None
+  # for simplicity of implementation, include specifications in DcOp as control knobs
+  lch: Optional[Union[float, List[float]]] = None
+  gmoverid: Optional[Union[float, List[float]]] = None
+  gm: Optional[Union[float, List[float]]] = None
+  
+@dataclass
+class ElectricModel(BaseParametricObject):
+  jd: Optional[Union[float, List[float]]] = None
+  ids: Optional[Union[float, List[float]]] = None
+  gm: Optional[Union[float, List[float]]] = None
+  gds: Optional[Union[float, List[float]]] = None
+  cgg: Optional[Union[float, List[float]]] = None
+  cgs: Optional[Union[float, List[float]]] = None
+  cgd: Optional[Union[float, List[float]]] = None
+  cdb: Optional[Union[float, List[float]]] = None
+  fo: Optional[Union[float, List[float]]] = None
+  ft: Optional[Union[float, List[float]]] = None
+  av: Optional[Union[float, List[float]]] = None
+  flicker_noise_psd: Optional[Union[float, List[float]]] = None
+  thermal_noise_psd: Optional[Union[float, List[float]]] = None
   
 @dataclass
 class Device:
   lut: DataFrame
   bsim4params: DataFrame
   type: DeviceType
-  ref_width: float
 
   def __init__(
     self, 
@@ -80,8 +110,7 @@ class Device:
     bsim4params_path: Optional[DeviceLutPath] = None, 
     device_type: str = "nch", 
     lut_varmap: Optional[dict] = None,
-    bsim4params_varmap: Optional[dict] = None,
-    ref_width: float = 3e-6
+    bsim4params_varmap: Optional[dict] = None
   ):
     assert device_type in DeviceType, f"Invalid device type: {device_type}"
     self.type = DeviceType(device_type)
@@ -98,31 +127,95 @@ class Device:
       self.lut = self.lut[[col for col in self.lut.columns if col in lut_varmap.values()]]
     if bsim4params_varmap and bsim4params_path:
       self.bsim4params = self.bsim4params.rename(columns=bsim4params_varmap)
-      self.bsim4params = self.bsim4params[[col for col in self.bsim4params.columns if col in bsim4params_varmap.values()]]
+      self.bsim4params = self.bsim4params[[
+        col for col in self.bsim4params.columns if col in bsim4params_varmap.values()]]
 
   def find_nearest_unique(self, value: float, query) -> Tuple[float, int]:
     array = self.lut[query].unique()
     index = abs(array - value).argmin()
     return float(array[index]), int(index)
   
-  def look_up(self, dc_op: Optional[DcOp]=None, **kwargs):
-    interp_method = kwargs.get("interp_method", "pchip")
-    usage_mode = kwargs.get("usage_mode", "forward")
-    default = DcOp(
-      vgs=self.lut["vgs"].unique().tolist(),
-      vds=self.lut["vds"].mean(), 
-      vsb=0.0, 
-      lch=self.lut["lch"].min(),
-    )
-    if usage_mode == "graph": # from (vgs, vds, vsb, lch) to cross evaluation for graph plotting
-      if dc_op is None: dc_op = default
-      pass
-    if usage_mode == "forward": # from (vgs, vds, vsb, lch, gm) to (id, gm, gds, gmbs, wch)
-      pass
-    if usage_mode == "backward": # from (wch, lch, vgs, vds, vsb) to (id, gm, gds, gmbs)
-      pass
+  def look_up(
+    self, xcols: List[str], ycols: List[str], 
+    target: Dict[str, List], return_xy: bool =False, **kwargs) -> DataFrame:
+    """Look up values in the LUT using an unstructured grid data interpolation
+
+    Args:
+        xcols (List[str]): Input data columns
+        ycols (List[str]): Output data columns
+        target (Dict[str, List]): Points where to sample the output data
+
+    Returns:
+        DataFrame: Interpolated output data DataFrame(ydata, columns=ycols)
+    """
+    assert all([col in self.lut.columns for col in xcols]), "Invalid xcols. Possible values: {self.lut.columns}"
+    assert all([col in self.lut.columns for col in ycols]), "Invalid ycols. Possible values: {self.lut.columns}"
+    assert all([col in target for col in xcols]), f"Invalid target columns. Possible values: {xcols}"
     
-  def geometry(self, dc_op: DcOp):
+    interp_method = kwargs.get("interp_method", "pchip")
+    order = kwargs.get("order", 2)
+    interp_mode = kwargs.get("interp_mode", "default") # default, griddata
+    distance_metric = kwargs.get("distance_metric", "euclidean")
+    dist_metric_kwargs = kwargs.get("dist_metric_kwargs", {})
+    
+    newdf = self.lut[ycols+xcols]
+    newdf = newdf.drop_duplicates(subset=xcols)
+    target_points = squeeze(array(cartesian_product(list(target.values()))))
+    target_df = DataFrame(target_points.T, columns=xcols)
+    
+    # assert every target column is between the min and max of the LUT
+    assert all(
+      [target_df[col].between(
+        self.lut[col].min(), self.lut[col].max()).all() 
+        for col in xcols]
+    ), "Target points out of LUT bounds"
+    
+    if interp_mode == "default":
+      distances = cdist(target_df.to_numpy(), newdf[xcols].to_numpy(), 
+        metric=distance_metric, **dist_metric_kwargs)
+      idx = distances.argpartition(2, axis=1)[:, :2]
+      bot_row = newdf.iloc[idx[:, 0]]
+      top_row = newdf.iloc[idx[:, 1]]
+      if bot_row.equals(top_row):
+        return bot_row[ycols] if not return_xy else bot_row[ycols+xcols]
+      newdf = DataFrame(columns=newdf.columns)
+      interpolated_idxs = []
+      for i in range(len(target_df)):
+        newdf = concat([newdf, bot_row.iloc[[i]], target_df.iloc[[i]], top_row.iloc[[i]]])
+        interpolated_idxs.append(i+1)
+      newdf = newdf.reset_index(drop=False)
+      newdf = newdf.interpolate(method=interp_method, order=order)
+      # return only the interpolated values
+      newdf = newdf.iloc[interpolated_idxs]
+      return newdf[ycols+xcols] if return_xy else newdf[ycols]
+      
+    elif interp_mode == "griddata":
+      # Matrix operations... it's possibly much faster
+      raise NotImplementedError
+    
+    assert False, "Invalid interp_mode. Possible values: default, pandas, griddata"
+  
+  def sizing(self, dcop: DcOp, electric_model: ElectricModel, **kwargs) -> Sizing:
+    """Device sizing from DC operating point and target electric parameters
+    Forward propagaton of the flow of Gm/Id method.
+    Args:
+        dcop (DcOp): DC operating point
+
+    Returns:
+        DataFrame: Resulting device sizing and electrical parameters
+    """
+    pass
+  
+  def electric_model(self, sizing: Sizing, dcop: DcOp, **kwargs) -> ElectricModel:
+    """Electric model from from device sizing and DC Operating point
+    Backwards propagaton of the flow of Gm/Id method.
+    Args:
+        sizing (Dict): Device sizing
+        dcop (DcOp): DC operating point containing voltages and currents
+
+    Returns:
+        Dict: Electrical model parameters
+    """
     pass
   
   def thermal_noise_psd(self, dc_op: DcOp):
@@ -194,7 +287,7 @@ if __name__ == "__main__":
   print(device.lut.head())
   print(device.bsim4params)
   
-  dcop = DcOp(vgs=0.8, vds=0.8, vsb=0.0, lch=30e-9)
+  dcop = DcOp(vgs=0.5, vds=0.6, vsb=0.0, id=1e-3, lch=30e-9)
   print(dcop.to_array())
   print(dcop.to_df())
   
@@ -202,10 +295,49 @@ if __name__ == "__main__":
   new_dcop = DcOp(
     vgs=device.lut["vgs"].unique().tolist(), 
     vds=device.lut["vds"].mean(), 
-    vsb=0.0, 
-    lch=device.lut["lch"].min()
+    vsb=0.0,
+    lch=60e-9,
+    gmoverid=10.0
   )
   print(new_dcop.to_array())
   print(new_dcop.to_df())
+  
+  input_cols = [ "vgs", "vds", "vsb", "lch", "gmoverid"]
+  output_cols = ["av", "jd", "ft"]
+  target = {
+    "vgs": [device.lut["vgs"].mean()],
+    "vds": [0.9],
+    "vsb": [0.0],
+    "lch": [device.lut["lch"].min()*1],
+    "gmoverid": [1.0, 27.0]
+  }
+  pprint(target)
+  print("Interpolating...")
+  
+  kwargs = {
+    "interp_method": "nearest",
+    "interp_mode": "default",
+  }
+  print("Default:")
+  print("Nearest:")
+  row = device.look_up(input_cols, output_cols, target,return_xy=True, **kwargs)
+  print(row)
+  
+  kwargs = {
+    "interp_method": "linear",
+    "interp_mode": "default",
+  }
+  print("Linear:")
+  row = device.look_up(input_cols, output_cols, target,return_xy=True, **kwargs)
+  print(row)
+  
+  kwargs = {
+    "interp_method": "pchip",
+    "interp_mode": "default",
+  }
+  print("PCHIP:")
+  row = device.look_up(input_cols, output_cols, target,return_xy=True, **kwargs)
+  print(row)
+  
   
   
