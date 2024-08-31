@@ -10,7 +10,7 @@
 
 nch_lut: 
   path: ../test/test_nch_lut.csv
-  # match to lut csv header - no need to change
+  # match left-hand side to lut csv header (right-hand side) - no need to change
   varmap:
     vgs: vgs_n
     lch: length_wave

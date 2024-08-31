@@ -2,6 +2,7 @@
 
 import warnings
 
+import re
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,17 +19,10 @@ from pprint import pprint
 import pdb
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
-from pandas import DataFrame, read_csv, concat
+from pandas import DataFrame, read_csv, concat, eval
 from pandas.core.reshape.util import cartesian_product
 
-__cfg = "../novaad/cfg.yml"
-
-def input_referred_flicker_noise_psd(): pass
-
-def input_referred_thermal_noise_psd(): pass
-  
-
-DeviceLutPath = Union[str, Path]
+# Define an enum for operations
 
 class MetaEnum(EnumMeta):
   def __contains__(cls, item):
@@ -36,10 +30,33 @@ class MetaEnum(EnumMeta):
       cls(item)
     except ValueError:
       return False
-    return True    
+    return True 
 
 class BaseEnum(Enum, metaclass=MetaEnum):
     pass
+  
+class Op(BaseEnum):
+    MUL = '*'
+    DIV = '/'
+    POW = '**'
+    ADD = '+'
+    SUB = '-'
+
+def parse_expression(expression:str) -> Tuple[str, Optional[str], Optional[Op]]:
+    pattern = re.compile(r'(\w+)([*/])(\w+)')
+    match = pattern.match(expression)
+    
+    if not match:
+      return (expression, None, None)
+    
+    col1, operator, col2 = match.groups()
+    if operator not in Op:
+      raise ValueError(f"Invalid operator: {operator}")  
+    op = Op(operator)
+    return (col1, col2, op)
+
+DeviceLutPath = Union[str, Path]
+
 
 class DeviceType(BaseEnum):
   NMOS = "nch"
@@ -47,7 +64,6 @@ class DeviceType(BaseEnum):
 
 @dataclass
 class BaseParametricObject:
-  
   def to_df(self) -> DataFrame:
     # generate list of lists
     def to_list(val):
@@ -146,29 +162,30 @@ class Device:
     index = abs(array - value).argmin()
     return float(array[index]), int(index)
   
-  # FIXME: add possibility of simply 
-  # returning LUT query results without a query in mind
   def look_up(
     self, 
-    xcols: List[str], 
     ycols: List[str], 
-    target: Dict[str, List], 
+    target: Optional[Dict[str, List]] = None, 
     return_xy: bool = False, 
     **kwargs) -> DataFrame:
     """Look up values in the LUT using an unstructured grid data interpolation
 
     Args:
-        xcols (List[str]): Input data columns
         ycols (List[str]): Output data columns
         target (Dict[str, List]): Points where to sample the output data
 
     Returns:
         DataFrame: Interpolated output data DataFrame(ydata, columns=ycols)
     """
-    assert all([col in self.lut.columns for col in xcols]), "Invalid xcols. Possible values: {self.lut.columns}"
-    assert all([col in target for col in xcols]), f"Invalid target columns. Possible values: {xcols}"
+    do_interpolation = target is not None
+    xcols = []
+    if do_interpolation:
+      xcols = list(target.keys())
     
+    xcols = [col for col in xcols if col in self.lut.columns]
     ycols = [col for col in ycols if col in self.lut.columns]
+    assert len(xcols)>0, "Invalid xcols. Possible values: {self.lut.columns}"
+    assert len(ycols)>0, "Invalid ycols. Possible values: {self.lut.columns}"
     
     interp_method = kwargs.get("interp_method", "pchip")
     order = kwargs.get("order", 2)
@@ -182,7 +199,6 @@ class Device:
       target_points = target_points.reshape(-1, 1)
     target_df = DataFrame(target_points.T, columns=xcols)
     target_df = target_df[xcols]
-    # assert every target column is between the min and max of the LUT
     assert all(
       [target_df[col].between(
         self.lut[col].min(), self.lut[col].max()).all() 
@@ -190,24 +206,25 @@ class Device:
     ), "Target points out of LUT bounds"
 
     if interp_mode == "default":
-      distances = cdist(target_df.to_numpy(), newdf[xcols].to_numpy(), 
-        metric=distance_metric, **dist_metric_kwargs)
-      idx = distances.argpartition(2, axis=1)[:, :2]
-      bot_row = newdf.iloc[idx[:, 0]]
-      top_row = newdf.iloc[idx[:, 1]]
-      if bot_row.equals(top_row):
-        return bot_row[ycols] if not return_xy else bot_row[yxcols]
-      newdf = DataFrame(columns=newdf.columns)
-      interpolated_idxs = []
-      for i in range(len(target_df)):
-        newdf = concat([newdf, bot_row.iloc[[i]], target_df.iloc[[i]], top_row.iloc[[i]]])
-        interpolated_idxs.append(i*3+1)
-      newdf = newdf.reset_index()
-      newdf = newdf.drop(columns=["index"])
-      newdf = newdf.interpolate(method=interp_method, order=order)
-      # return only the interpolated values
-      newdf = newdf.iloc[interpolated_idxs]
-      return newdf[yxcols] if return_xy else newdf[ycols]
+      if do_interpolation:
+        distances = cdist(target_df.to_numpy(), newdf[xcols].to_numpy(), 
+          metric=distance_metric, **dist_metric_kwargs)
+        idx = distances.argpartition(2, axis=1)[:, :2]
+        bot_row = newdf.iloc[idx[:, 0]]
+        top_row = newdf.iloc[idx[:, 1]]
+        if bot_row.equals(top_row):
+          return bot_row[ycols] if not return_xy else bot_row[yxcols]
+        newdf = DataFrame(columns=newdf.columns)
+        interpolated_idxs = []
+        for i in range(len(target_df)):
+          newdf = concat([newdf, bot_row.iloc[[i]], target_df.iloc[[i]], top_row.iloc[[i]]])
+          interpolated_idxs.append(i*3+1)
+        newdf = newdf.reset_index()
+        newdf = newdf.drop(columns=["index"])
+        newdf = newdf.interpolate(method=interp_method, order=order)
+        newdf = newdf.iloc[interpolated_idxs]
+        return newdf[yxcols] if return_xy else newdf[ycols]
+      return self.lut[ycols]
       
     elif interp_mode == "griddata":
       # Matrix operations to perform unstructured grid data interpolation... it's possibly much faster
@@ -250,7 +267,6 @@ class Device:
       "interp_mode": kwargs.get("interp_mode", "default"),
     }
     ycols = ["jd", "lch"]
-    xcols = ["vgs", "vds", "vsb", "lch", "gmoverid"]
     target = {
       "vgs": sizing_spec.vgs if isinstance(sizing_spec.vgs, list) else [sizing_spec.vgs],
       "vds": sizing_spec.vds if isinstance(sizing_spec.vds, list) else [sizing_spec.vds],
@@ -258,7 +274,7 @@ class Device:
       "lch": sizing_spec.lch if isinstance(sizing_spec.lch, list) else [sizing_spec.lch], # I included channel length to replace instrinsic gain spec. Using Av would require early voltage Va to also be extracted.
       "gmoverid": sizing_spec.gmoverid if isinstance(sizing_spec.gmoverid, list) else [sizing_spec.gmoverid]
     }
-    closest_target = self.look_up(xcols, ycols, target, return_xy=True, **kwargs)
+    closest_target = self.look_up(ycols, target, return_xy=True, **kwargs)
     sizing = Sizing(lch=closest_target["lch"].values)
     dcop = DcOp(
       vgs=sizing_spec.vgs, 
@@ -290,7 +306,6 @@ class Device:
       "interp_mode": kwargs.get("interp_mode", "default"),
     }
     ycols = ["jd", "gm", "gds", "cgg", "cgs", "cgd", "cdb", "csb", "ft", "av"]
-    xcols = ["vgs", "vds", "vsb", "lch", "jd"]
     target = {
       "vgs": dcop.vgs if isinstance(dcop.vgs, list) else [dcop.vgs],
       "vds": dcop.vds if isinstance(dcop.vds, list) else [dcop.vds],
@@ -298,7 +313,7 @@ class Device:
       "lch": sizing.lch if isinstance(sizing.lch, list) else [sizing.lch],
       "jd": target_jd.tolist()
     }
-    reference_electric_model = self.look_up(xcols, ycols, target, **kwargs)
+    reference_electric_model = self.look_up(ycols, target, **kwargs)
     pdb.set_trace()
     #NOTE: simple model assuming linear scaling with channel width
     #FIXME: Use bsim4 model to effectively scale the device
@@ -318,8 +333,30 @@ class Device:
   def noise_summary(self, dcop: DcOp, sizing: Sizing, **kwargs):
     raise NotImplementedError
   
-  def wave_vs_wave(self, dc_op: DcOp):
-    raise NotImplementedError
+  def wave_vs_wave(self, ycol:str, xcol:str) -> Optional[DataFrame]:
+    ycol_exp = parse_expression(ycol)
+    xcol_exp = parse_expression(xcol)
+    ycol_arr: Optional[ndarray] = None
+    xcol_arr: Optional[ndarray] = None
+    
+    if ycol_exp[-1] is not None:
+      assert ycol_exp[1] in self.lut.columns, f"Invalid ycol: {ycol_exp[1]}. Possible: {self.lut.columns}"
+      assert ycol_exp[0] in self.lut.columns, f"Invalid ycol: {ycol_exp[0]}. Possible: {self.lut.columns}"
+      ycol_arr = eval(f"self.lut.{ycol_exp[0]} {ycol_exp[2].value} self.lut.{ycol_exp[1]}").to_numpy()
+    else:
+      ycol_arr = self.lut[ycol_exp[0]].to_numpy()
+    
+    if xcol_exp[-1] is not None:
+      assert xcol_exp[1] in self.lut.columns, f"Invalid ycol: {xcol_exp[1]}. Possible: {self.lut.columns}"
+      assert xcol_exp[0] in self.lut.columns, f"Invalid ycol: {xcol_exp[0]}. Possible: {self.lut.columns}"
+      xcol_arr = eval(f"self.lut.{xcol_exp[0]} {xcol_exp[2].value} self.lut.{xcol_exp[1]}").to_numpy()
+    else:
+      xcol_arr = self.lut[xcol_exp[0]].to_numpy()
+    
+    if ycol_arr is None or xcol_arr is None:
+      return None
+    
+    return DataFrame({xcol: xcol_arr,ycol: ycol_arr})
   
 
 # Examples
@@ -355,7 +392,6 @@ def test_device_look_up(lut_varmap):
     "/Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_nch_lut.csv",
     device_type="nch", lut_varmap=lut_varmap
   )
-  input_cols = [ "vgs", "vds", "vsb", "lch", "gmoverid"]
   output_cols = ["av", "jd", "ft"]
   target = {
     "vgs": [device.lut["vgs"].mean()],
@@ -373,7 +409,7 @@ def test_device_look_up(lut_varmap):
   }
   print("Default:")
   print("Nearest:")
-  row = device.look_up(input_cols, output_cols, target,return_xy=True, **kwargs)
+  row = device.look_up(output_cols, target,return_xy=True, **kwargs)
   print(row)
   
   kwargs = {
@@ -381,7 +417,7 @@ def test_device_look_up(lut_varmap):
     "interp_mode": "default",
   }
   print("Linear:")
-  row = device.look_up(input_cols, output_cols, target,return_xy=True, **kwargs)
+  row = device.look_up(output_cols, target,return_xy=True, **kwargs)
   print(row)
   
   kwargs = {
@@ -389,7 +425,7 @@ def test_device_look_up(lut_varmap):
     "interp_mode": "default",
   }
   print("PCHIP:")
-  row = device.look_up(input_cols, output_cols, target,return_xy=True, **kwargs)
+  row = device.look_up(output_cols, target,return_xy=True, **kwargs)
   print(row)
 
 def test_device_sizing(lut_varmap):
@@ -447,7 +483,41 @@ def test_device_electric_model(lut_varmap):
   electric_model = device.electric_model(dcop, sizing)
   
   print(electric_model.to_df())
+  
+def test_device_wave_vs_wave(lut_varmap):
+  device = Device(
+    "/Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_nch_lut.csv",
+    device_type="nch", lut_varmap=lut_varmap
+  )
+  
+  gm_id_vs_vgs = device.wave_vs_wave("gmoverid", "vgs")
+  print(gm_id_vs_vgs)
+  
+  gm_id_vs_vgs = device.wave_vs_wave("gm/ids", "vgs")
+  print(gm_id_vs_vgs)
+  
+  gm_id_vs_jd = device.wave_vs_wave("gm/ids", "jd")
+  print(gm_id_vs_jd)
+  
+  ft_vs_jd = device.wave_vs_wave("ft", "jd")
+  print(ft_vs_jd)
+  
+  ft_vs_jd = device.wave_vs_wave("gm/cgg", "jd")
+  ft_vs_jd["gm/cgg"] = ft_vs_jd["gm/cgg"] / (2*3.14159)
+  print(ft_vs_jd)
 
+  av_vs_gm_id = device.wave_vs_wave("av", "gmoverid")
+  print(av_vs_gm_id)
+
+  av_vs_gm_id = device.wave_vs_wave("av", "gm/ids")
+  print(av_vs_gm_id)
+  
+  fom_av_bw_vs_jd = device.wave_vs_wave("ft*av", "jd")
+  print(fom_av_bw_vs_jd)
+  
+  fom_noise_bw_vs_jd = device.wave_vs_wave("ft*gmoverid", "jd")
+  print(fom_noise_bw_vs_jd)
+  
 if __name__ == "__main__":
   lut_varmap = {
     "vgs": "vgs_n",
@@ -506,6 +576,6 @@ if __name__ == "__main__":
   
   #test_device_sizing(lut_varmap)
   
-  test_device_electric_model(lut_varmap)
+  #test_device_electric_model(lut_varmap)
   
-  
+  test_device_wave_vs_wave(lut_varmap)
