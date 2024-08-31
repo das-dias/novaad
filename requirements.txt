@@ -5,5 +5,4 @@ plotly
 dash
 docopt
 scipy
-tabulate
 pydantic
