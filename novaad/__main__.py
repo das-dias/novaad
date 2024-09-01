@@ -197,11 +197,10 @@ def main():
         try:
           args = docopt(__doc__, argv=argv, version='novaad 0.1')
           app(args, cfg)
-        except DocoptExit as de:
+        except DocoptExit:
           continue
         except Exception as e:
           print(f"Input:\t{line}\tOutput: {e}")
           
-
 if __name__ == '__main__':
   main()
