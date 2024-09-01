@@ -73,8 +73,10 @@ def device_sizing(args, cfg) -> bool:
   device = None
   device_cfg = cfg.get(device_type, None)
   assert device_cfg is not None, "Device ('nch' | 'pch') not found in configuration."
-  lut_path = Path(device_cfg.get('lut-path', None)).resolve()
+  lut_path = device_cfg.get('lut-path', None)
   assert lut_path is not None, "Device 'lut-path' not found in configuration."
+  lut_path = Path(lut_path).resolve()
+  assert lut_path is not None, "Device 'lut-path' was not resolved."
   lut_varmap = device_cfg.get('varmap', None)
   if lut_varmap is not None:
     lut_varmap = {v: k for k, v in lut_varmap.items()}
