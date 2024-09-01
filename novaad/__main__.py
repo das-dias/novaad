@@ -16,7 +16,7 @@ Examples:
     novaad --pch --vgs=0.8 --vds=0.5 --vsb=0.0 --ids=500e-6 --lch=180e-9 --wch=18e-6
 
 Usage:
-  novaad (--nch | --pch) [--vgs=<vgs> --vds=<vds> --vsb=<vsb> --lch=<lch> ( --wch=<wch> |  --gmid=<gmid> (--ids=<ids> | --gm=<gm>) | --ron=<ron> | --cgg=<cgg> )] [--verbose]
+  novaad (--nch | --pch | --gui) [--vgs=<vgs> --vds=<vds> --vsb=<vsb> --lch=<lch> ( --wch=<wch> |  --gmid=<gmid> (--ids=<ids> | --gm=<gm>) | --ron=<ron> | --cgg=<cgg> )] [--verbose]
   novaad <command-file>
   novaad --gui
   novaad (-h | --help)
@@ -48,7 +48,7 @@ from pprint import pprint
 
 from yaml import safe_load, safe_dump
 
-from novaad import Device, SizingSpecification, DcOp, Sizing
+from novaad import Device, SizingSpecification, DcOp, Sizing, GuiApp
 
 import pdb
 
@@ -143,14 +143,18 @@ def electrical_params_from_sizing_dcop(args, cfg):
   
 
 def app(args, cfg) -> bool:
+  if args['--gui']:
+    gui = GuiApp()
+    return gui.run()
   if args['--gmid']:
     return device_sizing(args, cfg)
-  elif args['--ron']:
+  if args['--ron']:
     return switch_sizing(args, cfg)
-  elif args['--cgg']:
+  if args['--cgg']:
     return moscap_sizing(args, cfg)
-  elif args['--wch']:
+  if args['--wch']:
     return electrical_params_from_sizing_dcop(args, cfg)
+  
   return False
 
 def config(args):
