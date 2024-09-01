@@ -21,7 +21,7 @@ Usage:
   novaad --gui
   novaad (-h | --help)
   novaad --version
-  novaad --set-cfg-path <cfg-path>
+  novaad --setup-config <cfg-path>
 
 Options:
   -h --help       Show this screen.
@@ -37,7 +37,7 @@ Options:
   --ron <ron>     On-Resistance [default: 10.0].
   <command-file>  Input Command File.
   --gui           Launch GUI.
-  --set-cfg-path  Set Configuration File Path.
+  --setup-config  Set Configuration File Path.
 """
 
 from docopt import docopt, DocoptExit
@@ -161,7 +161,7 @@ def config(args):
     CFG_PATH = str(Path(cfg.get('cfg-path', None)).resolve())
     with open(CFG_PATH, 'r') as f:
       cfg = safe_load(f)
-  if args["--set-cfg-path"]:
+  if args["--setup-config"]:
     CFG_PATH = Path(args["<cfg-path>"]).resolve()
     new_cfg = None
     with open(CFG_PATH, 'r') as f:
