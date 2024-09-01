@@ -25,16 +25,15 @@ Usage:
 Options:
   -h --help       Show this screen.
   --version       Show version.
-  --vgs <vgs>     Gate-Source Voltage.
-  --vds <vds>     Drain-Source Voltage.
-  --vsb <vsb>     Substrate Voltage.
-  --lch <lch>     Channel Length.
-  --gmid <gmid>   Transconductance Efficiency.
-  --ids <ids>     Drain Current.
-  --wch <wch>     Channel Width.
-  --cgg <cgg>     Gate-Source Capacitance.
-  --ron <ron>     On-Resistance.
-  --typ <typ>     Device Type.
+  --vgs <vgs>     Gate-Source Voltage [default: 0.8].
+  --vds <vds>     Drain-Source Voltage [default: 0.8].
+  --vsb <vsb>     Substrate Voltage [default: 0.0].
+  --lch <lch>     Channel Length [default: 180e-9].
+  --gmid <gmid>   Transconductance Efficiency [default: 10.0].
+  --ids <ids>     Drain Current [default: 100e-6].
+  --wch <wch>     Channel Width [default: 10e-6].
+  --cgg <cgg>     Gate-Source Capacitance [default: 10e-15].
+  --ron <ron>     On-Resistance [default: 10.0].
   <command-file>  Input Command File.
   --gui           Launch GUI.
 """
@@ -89,7 +88,12 @@ def device_sizing(args, cfg) -> bool:
   elif args['--gm']:
     sizing_spec.gm = float(args['--gm'])
   sizing = device.size(sizing_spec)
-  print(sizing)
+  print()
+  print("Summary:")
+  print('DC-OP:')
+  print(sizing.dc_op.to_df())
+  print('Sizing:')
+  print(sizing.to_df())
   return True
   
 def moscap_sizing(args, cfg):
