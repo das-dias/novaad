@@ -41,7 +41,7 @@ from docopt import docopt
 from warnings import warn
 from pathlib import Path
 
-from pyyaml import load
+from yaml import safe_load
 
 from novaad import Device, SizingSpecification, DcOp, Sizing
 
@@ -69,7 +69,7 @@ def device_sizing(args, cfg) -> bool:
   reference_width = float(reference_width)
   device = Device(
     lut_path, 
-    bsim4params_path=lut_varmap, 
+    lut_varmap=lut_varmap, 
     bsim4params_path=bsim4_params_path, 
     bsim4params_varmap=bsim4_params_varmap, 
     ref_width=reference_width,
@@ -113,7 +113,9 @@ def app(args, cfg) -> bool:
   return False
 
 def main():
-  cfg = load(open(__cfg_path__, 'r'))
+  cfg = None
+  with open(__cfg_path__, 'r') as f:
+    cfg = safe_load(f)
   args = docopt(__doc__, version='novaad 0.1')
   if not args["<command-file>"]:
     app(args, cfg)
