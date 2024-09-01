@@ -11,7 +11,7 @@
 #bsim4-params: ../28tsmc/bsim4_parameters_std.csv
 
 nch: 
-  lut-path: ../test/test_nch_lut.csv
+  lut-path: /Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_nch_lut.csv
   # match left-hand side to lut csv header (right-hand side) - no need to change
   varmap:
     vgs: vgs_n
@@ -41,7 +41,7 @@ nch:
     av: av_n
     fom_bw: FoM_BW_n
     fom_nbw: FoM_Nbw_n
-  bsim4-params-path: ../test/test_nch_bsim4_params.csv
+  bsim4-params-path: /Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_nch_bsim4_params.csv
   bsim4-params-varmap:
     u0: U0_n
     lp: LP_n 
@@ -59,7 +59,7 @@ nch:
     ntnoi: NTNOI_n
 
 pch:
-  bsim4-params-path: ../test/test_pch_bsim4_params.csv
+  bsim4-params-path: /Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_pch_bsim4_params.csv
   bsim4-params-varmap:
     c0: C0_p
     u0: U0_p
@@ -82,3 +82,6 @@ out-log: ./log
 
 # return device geometries to output file
 out-geom: ./outdg
+
+# replacement config file
+cfg-path: ''

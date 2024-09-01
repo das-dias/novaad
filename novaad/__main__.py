@@ -16,11 +16,12 @@ Examples:
     novaad --pch --vgs=0.8 --vds=0.5 --vsb=0.0 --ids=500e-6 --lch=180e-9 --wch=18e-6
 
 Usage:
-  novaad (--nch | --pch) --vgs=<vgs> --vds=<vds> --vsb=<vsb> --lch=<lch> ( --wch=<wch> |  --gmid=<gmid> (--ids=<ids> | --gm=<gm>) | --ron=<ron> | --cgg=<cgg> )
+  novaad (--nch | --pch) [--vgs=<vgs> --vds=<vds> --vsb=<vsb> --lch=<lch> ( --wch=<wch> |  --gmid=<gmid> (--ids=<ids> | --gm=<gm>) | --ron=<ron> | --cgg=<cgg> )] [--verbose]
   novaad <command-file>
   novaad --gui
   novaad (-h | --help)
   novaad --version
+  novaad --set-cfg-path <cfg-path>
 
 Options:
   -h --help       Show this screen.
@@ -36,29 +37,53 @@ Options:
   --ron <ron>     On-Resistance [default: 10.0].
   <command-file>  Input Command File.
   --gui           Launch GUI.
+  --set-cfg-path  Set Configuration File Path.
 """
 
 from docopt import docopt
 from warnings import warn
 from pathlib import Path
 
-from yaml import safe_load
+from pprint import pprint
+
+from yaml import safe_load, safe_dump
 
 from novaad import Device, SizingSpecification, DcOp, Sizing
 
-__cfg_path__ = '../cfg.yml'
+import pdb
+
+global __REF_CWD__
+__REF_CWD__ = str(Path(__file__).resolve().cwd())
+
+global __DEFAULT_CFG_PATH__
+__DEFAULT_CFG_PATH__ = str(Path(__REF_CWD__+'/cfg.yml').resolve())
+global CFG_PATH
+CFG_PATH = __DEFAULT_CFG_PATH__
 
 def device_sizing(args, cfg) -> bool:
-  device_type = args['--typ']
+  verbose = 0
+  if args['--verbose']:
+    verbose = 1
+  device_type = None
+  if args['--nch']:
+    device_type = 'nch'
+  elif args['--pch']:
+    device_type = 'pch'
+  else: raise ValueError("Device type not found in arguments.")
   device = None
   device_cfg = cfg.get(device_type, None)
   assert device_cfg is not None, "Device ('nch' | 'pch') not found in configuration."
-  lut_path = device_cfg.get('lut-path', None)
+  lut_path = Path(device_cfg.get('lut-path', None)).resolve()
   assert lut_path is not None, "Device 'lut-path' not found in configuration."
-  lut_varmap = lut_varmap.get('varmap', None)
+  lut_varmap = device_cfg.get('varmap', None)
   if lut_varmap is not None:
-    lut_varmap = {k: v for k, v in lut_varmap.items()}
-  bsim4_params_path = device_cfg.get('bsim4-params-path', None)
+    lut_varmap = {v: k for k, v in lut_varmap.items()}
+  if verbose > 0:
+    print()
+    print("Device Configuration:")
+    pprint(device_cfg)
+  
+  bsim4_params_path = Path(device_cfg.get('bsim4-params-path', None)).resolve()
   bsim4_params_varmap = device_cfg.get('bsim4-params-varmap', None)
   if bsim4_params_varmap is not None:
     bsim4_params_varmap = {k: v for k, v in bsim4_params_varmap.items()}
@@ -76,22 +101,29 @@ def device_sizing(args, cfg) -> bool:
     ref_width=reference_width,
     device_type=device_type
   )
+  
+  if verbose > 0:
+    print()
+    print("Device LUT:")
+    print(device.lut.columns)
+    print(device.lut.head())
+  
   sizing_spec = SizingSpecification(
     vgs=float(args['--vgs']),
     vds=float(args['--vds']),
     vsb=float(args['--vsb']),
     lch=float(args['--lch']),
-    gmid=float(args['--gmid'])
+    gmoverid=float(args['--gmid'])
   )
   if args['--ids']:
     sizing_spec.ids = float(args['--ids'])
   elif args['--gm']:
     sizing_spec.gm = float(args['--gm'])
-  sizing = device.size(sizing_spec)
+  dcop, sizing = device.sizing(sizing_spec, return_dcop=True)
   print()
   print("Summary:")
   print('DC-OP:')
-  print(sizing.dc_op.to_df())
+  print(dcop.to_df())
   print('Sizing:')
   print(sizing.to_df())
   return True
@@ -120,20 +152,36 @@ def app(args, cfg) -> bool:
 
 def main():
   cfg = None
-  with open(__cfg_path__, 'r') as f:
+  with open(__DEFAULT_CFG_PATH__, 'r') as f:
     cfg = safe_load(f)
+  if cfg is None:
+    raise ValueError("Configuration file not found.")
+  if cfg.get('cfg-path', '') != '':
+    CFG_PATH = str(Path(cfg.get('cfg-path', None)).resolve())
+    with open(CFG_PATH, 'r') as f:
+      cfg = safe_load(f)
   args = docopt(__doc__, version='novaad 0.1')
+  if args["--set-cfg-path"]:
+    CFG_PATH = Path(args["<cfg-path>"]).resolve()
+    with open(CFG_PATH, 'r') as f:
+      cfg = safe_load(f)
+      cfg['cfg-path'] = str(CFG_PATH)
+    with open(__DEFAULT_CFG_PATH__, 'w') as f:
+      f.write(safe_dump(cfg, default_flow_style=False, ident=2, width=80)) 
+  
   if not args["<command-file>"]:
     app(args, cfg)
   else:
     fp = Path(args["<command-file>"])
     assert fp.exists(), "Command file does not exist."
     assert fp.is_file(), "Command file must be a file."
-    path, ext = fp.suffixes
+    ext = fp.suffixes[0] if len(fp.suffixes) > 0 else ''
     assert ext in ['.txt', ''], "Command file must be a text file."
     with open(args["<command-file>"], 'r') as f:
       for line in f:
-        args = docopt(line, version='novaad 0.1')
+        line = line if len(line) > 0 else '-h'
+        argv = line.split()
+        args = docopt(__doc__, argv=argv, version='novaad 0.1')
         app(args, cfg)
 
 if __name__ == '__main__':
