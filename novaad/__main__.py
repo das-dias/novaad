@@ -40,8 +40,9 @@ Options:
   --set-cfg-path  Set Configuration File Path.
 """
 
-from docopt import docopt
+from docopt import docopt, DocoptExit
 from warnings import warn
+from err
 from pathlib import Path
 
 from pprint import pprint
@@ -59,7 +60,7 @@ global __DEFAULT_CFG_PATH__
 __DEFAULT_CFG_PATH__ = str(Path(__REF_CWD__+'/cfg.yml').resolve())
 global CFG_PATH
 CFG_PATH = __DEFAULT_CFG_PATH__
-
+  
 def device_sizing(args, cfg) -> bool:
   verbose = 0
   if args['--verbose']:
@@ -150,7 +151,7 @@ def app(args, cfg) -> bool:
     return electrical_params_from_sizing_dcop(args, cfg)
   return False
 
-def main():
+def config(args):
   cfg = None
   with open(__DEFAULT_CFG_PATH__, 'r') as f:
     cfg = safe_load(f)
@@ -160,15 +161,21 @@ def main():
     CFG_PATH = str(Path(cfg.get('cfg-path', None)).resolve())
     with open(CFG_PATH, 'r') as f:
       cfg = safe_load(f)
-  args = docopt(__doc__, version='novaad 0.1')
   if args["--set-cfg-path"]:
     CFG_PATH = Path(args["<cfg-path>"]).resolve()
+    new_cfg = None
     with open(CFG_PATH, 'r') as f:
-      cfg = safe_load(f)
-      cfg['cfg-path'] = str(CFG_PATH)
-    with open(__DEFAULT_CFG_PATH__, 'w') as f:
-      f.write(safe_dump(cfg, default_flow_style=False, ident=2, width=80)) 
-  
+      new_cfg = safe_load(f)
+    if new_cfg is not None:
+      with open(__DEFAULT_CFG_PATH__, 'w') as f:
+        cfg['cfg-path'] = str(CFG_PATH)
+        f.write(safe_dump(cfg, default_flow_style=False, ident=2, width=80)) 
+        cfg = new_cfg
+  return cfg
+
+def main():  
+  args = docopt(__doc__, version='novaad 0.1')
+  cfg = config(args)
   if not args["<command-file>"]:
     app(args, cfg)
   else:
@@ -178,7 +185,7 @@ def main():
     ext = fp.suffixes[0] if len(fp.suffixes) > 0 else ''
     assert ext in ['.txt', ''], "Command file must be a text file."
     with open(args["<command-file>"], 'r') as f:
-      for line in f:
+      for line in f.readlines():
         line = line if len(line) > 0 else '-h'
         argv = line.split()
         args = docopt(__doc__, argv=argv, version='novaad 0.1')
