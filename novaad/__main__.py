@@ -7,34 +7,36 @@ Examples:
     Size a device from a DC-OP and a channel 
     length (aliasing a intrinsic gain spec.).
     
-    novaad --nch --vgs 0.8 --vds 0.5 --vsb 0.0 --lch 180e-9 --gmid 10
+    novaad --nch --vgs=0.8 --vds=0.5 --vsb=0.0 --lch=180e-9 --gmid=10 --gm=1e-3
 
   * Backward usage of Gm/Id design model:
     Obtain the electrical parameters of a 
     device from its W/L sizing and DC-OP.
     
-    novaad --pch 0.8 --vds 0.5 --vsb 0.0 --ids 1e-3 --lch 180e-9 --wch 1.8e-6
+    novaad --pch --vgs=0.8 --vds=0.5 --vsb=0.0 --ids=500e-6 --lch=180e-9 --wch=18e-6
 
 Usage:
   novaad (--nch | --pch) --vgs=<vgs> --vds=<vds> --vsb=<vsb> --lch=<lch> ( --wch=<wch> |  --gmid=<gmid> (--ids=<ids> | --gm=<gm>) | --ron=<ron> | --cgg=<cgg> )
   novaad <command-file>
+  novaad --gui
   novaad (-h | --help)
   novaad --version
 
 Options:
-  -h --help     Show this screen.
-  --version     Show version.
-  --vgs <vgs>    Gate-Source Voltage.
-  --vds <vds>    Drain-Source Voltage.
-  --vsb <vsb>    Substrate Voltage.
-  --lch <lch>    Channel Length.
-  --gmid <gmid>  Transconductance Efficiency.
-  --ids <ids>    Drain Current.
-  --wch <wch>    Channel Width.
-  --cgg <cgg>    Gate-Source Capacitance.
-  --ron <ron>    On-Resistance.
-  --typ <typ>    Device Type.
-  <command-file> Input Command File.
+  -h --help       Show this screen.
+  --version       Show version.
+  --vgs <vgs>     Gate-Source Voltage.
+  --vds <vds>     Drain-Source Voltage.
+  --vsb <vsb>     Substrate Voltage.
+  --lch <lch>     Channel Length.
+  --gmid <gmid>   Transconductance Efficiency.
+  --ids <ids>     Drain Current.
+  --wch <wch>     Channel Width.
+  --cgg <cgg>     Gate-Source Capacitance.
+  --ron <ron>     On-Resistance.
+  --typ <typ>     Device Type.
+  <command-file>  Input Command File.
+  --gui           Launch GUI.
 """
 
 from docopt import docopt
