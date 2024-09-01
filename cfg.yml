@@ -4,12 +4,14 @@
 
 # Paths to input files
 #ref_width: 3e-5
-#nch_lut: ../28tsmc/nch_lut.csv
+#nch: 
+# lut-path: ../28tsmc/nch_lut.csv
+# bsim4-params-path: 
 #pch_lut: ../28tsmc/pch_lut.csv
 #bsim4-params: ../28tsmc/bsim4_parameters_std.csv
 
-nch_lut: 
-  path: ../test/test_nch_lut.csv
+nch: 
+  lut-path: ../test/test_nch_lut.csv
   # match left-hand side to lut csv header (right-hand side) - no need to change
   varmap:
     vgs: vgs_n
@@ -39,10 +41,8 @@ nch_lut:
     av: av_n
     fom_bw: FoM_BW_n
     fom_nbw: FoM_Nbw_n
-    
-bsim4-params: 
-  path: ../test/test_bsim4_params.csv
-  nch-varmap:
+  bsim4-params-path: ../test/test_nch_bsim4_params.csv
+  bsim4-params-varmap:
     u0: U0_n
     lp: LP_n 
     uq: UA_n 
@@ -57,8 +57,10 @@ bsim4-params:
     af: AF_n
     ef: EF_n
     ntnoi: NTNOI_n
-    
-  pch-varmap:
+
+pch:
+  bsim4-params-path: ../test/test_pch_bsim4_params.csv
+  bsim4-params-varmap:
     c0: C0_p
     u0: U0_p
     lp: LP_p
@@ -74,7 +76,7 @@ bsim4-params:
     ef: EF_p
     ntnoi: NTNOI_p
 
-ref_width: 3e-5 # reference channel width
+ref-width: 3e-5 # reference channel width
 
 out-log: ./log
 
