@@ -1,0 +1,9 @@
+# Include the LICENSE file
+include LICENSE
+
+# Include any configuration files
+include *.yaml
+
+# Include documentation files
+include *.txt
+include *.rst

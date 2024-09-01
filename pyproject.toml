@@ -6,6 +6,16 @@ authors = ["dasdias <das.dias@campus.fct.unl.pt>"]
 license = "BSD-2"
 readme = "README.md"
 
+# Specify files or directories to include in the distribution
+include = [
+  "README.md",            # Include the README file
+  "LICENSE",              # Include the LICENSE file
+  "novaad/*.yaml",        # Include all YAML files in the config directory
+  "novaad/*.yml",         # Include all YAML files in the root directory
+  "docs/**",              # Include all files in the docs directory
+  "tests/**"         # Include all files in the tests/data directory
+]
+
 [tool.poetry.dependencies]
 python = "^3.11"
 pandas = "^2.2.2"
@@ -20,6 +30,9 @@ pydantic = "^2.8.2"
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.2"
 pytest-benchmark = "^4.0.0"
+poetry-setup = "^0.3.6"
+poetry = "^1.8.3"
+pytest-coverage = "^0.0"
 
 [build-system]
 requires = ["poetry-core"]
