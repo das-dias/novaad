@@ -1,4 +1,4 @@
 --nch
 
---nch --vgs=0.8 --vds=0.5 --vsb=0.0 --lch=180e-9 --gmid=10 --gm=1e-3
+--nch --vgs=0.8 --vds=0.5 --vsb=0.0 --lch=180e-9 --gmid=27 --gm=1e-3
 --pch

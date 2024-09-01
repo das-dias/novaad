@@ -42,7 +42,6 @@ Options:
 
 from docopt import docopt, DocoptExit
 from warnings import warn
-from err
 from pathlib import Path
 
 from pprint import pprint
@@ -118,7 +117,8 @@ def device_sizing(args, cfg) -> bool:
   )
   if args['--ids']:
     sizing_spec.ids = float(args['--ids'])
-  elif args['--gm']:
+  if args['--gm']:
+    sizing_spec.ids = None
     sizing_spec.gm = float(args['--gm'])
   dcop, sizing = device.sizing(sizing_spec, return_dcop=True)
   print()
@@ -188,8 +188,14 @@ def main():
       for line in f.readlines():
         line = line if len(line) > 0 else '-h'
         argv = line.split()
-        args = docopt(__doc__, argv=argv, version='novaad 0.1')
-        app(args, cfg)
+        try:
+          args = docopt(__doc__, argv=argv, version='novaad 0.1')
+          app(args, cfg)
+        except DocoptExit as de:
+          continue
+        except Exception as e:
+          print(f"Input:\t{line}\tOutput: {e}")
+          
 
 if __name__ == '__main__':
   main()
