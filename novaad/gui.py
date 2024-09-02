@@ -7,14 +7,14 @@ from warnings import warn
 from pandas import DataFrame, merge, concat
 from numpy import log10, ceil, zeros
 from itertools import cycle
-from novaad import Device, SizingSpecification, DcOp, ElectricModel, Sizing
+from novaad import Device
 
 
 class GuiApp:
   def __init__(self, device:Device, **kwargs):
     self.device = device
     
-  def run_device_sizing(self, args, dcop: DcOp, sizing: Sizing, electric_model: ElectricModel, **kwargs):
+  def run_device_sizing(self, args, dcop_df: DataFrame, sizing_df: DataFrame, electric_model_df: DataFrame, **kwargs):
     tol = kwargs.get('tol', 1e-2)
     lch_tol = kwargs.get('lch-tol', 1e-9)
     verbose = kwargs.get('verbose', 0)
@@ -34,70 +34,6 @@ class GuiApp:
             ]
     )
     
-    dcop_df = dcop.to_df()
-    sizing_df = sizing.to_df()
-    electric_model_df = electric_model.to_df()
-    
-    # format info for output to SI units
-    dcop_df['ids'] = dcop_df['ids'].apply(lambda x: f"{x/1e-6:.4}")
-    dcop_df['vgs'] = dcop_df['vgs'].apply(lambda x: f"{x:.2}")
-    dcop_df['vds'] = dcop_df['vds'].apply(lambda x: f"{x:.2}")
-    dcop_df['vsb'] = dcop_df['vsb'].apply(lambda x: f"{x:.2}")
-    
-    dcop_df = dcop_df.rename(columns={
-      'vgs': 'Vgs [V]',
-      'vds': 'Vds [V]',
-      'vsb': 'Vsb [V]',
-      'ids': 'Ids [uA]',
-    })
-    
-    dcop_df['name'] = args['<name>'] \
-      if args['--name'] else  [f'M{i}' for i in range(len(dcop_df))]
-    
-    sizing_df['wch'] = sizing_df['wch'].apply(lambda x: f"{x/1e-6:.4}")
-    sizing_df['lch'] = sizing_df['lch'].apply(lambda x: f"{x/1e-9:.4}")
-    
-    sizing_df = sizing_df.rename(columns={
-      'wch': 'Wch [um]',
-      'lch': 'Lch [nm]',
-    })
-    sizing_df['type'] = 'nch' if args['nch'] else 'pch'
-    sizing_df['name'] = args['<name>'] \
-      if args['--name'] else  [f'M{i}' for i in range(len(sizing_df))]
-    
-    electric_model_df['gm'] = electric_model_df['gm'].apply(lambda x: f"{x/1e-3:.4}") \
-      if 'gm' in electric_model_df.columns else zeros(len(electric_model_df))
-    electric_model_df['gds'] = electric_model_df['gds'].apply(lambda x: f"{x/1e-6:.4}") \
-      if 'gds' in electric_model_df.columns else zeros(len(electric_model_df))
-    electric_model_df['ft'] = electric_model_df['ft'].apply(lambda x: f"{x/1e9:.4}") \
-      if 'ft' in electric_model_df.columns else zeros(len(electric_model_df))
-    electric_model_df['av'] = electric_model_df['av'].apply(lambda x: f"{20*log10(x):.4}") \
-      if 'av' in electric_model_df.columns else zeros(len(electric_model_df))
-    electric_model_df['jd'] = electric_model_df['jd'].apply(lambda x: f"{x:.2e}") \
-      if 'jd' in electric_model_df.columns else zeros(len(electric_model_df))
-    electric_model_df['cgs'] = electric_model_df['cgs'].apply(lambda x: f"{x/1e-15:.4}") \
-      if 'cgs' in electric_model_df.columns else zeros(len(electric_model_df))
-    electric_model_df['cgd'] = electric_model_df['cgd'].apply(lambda x: f"{x/1e-15:.4}") \
-      if 'cgd' in electric_model_df.columns else zeros(len(electric_model_df))
-    electric_model_df['cgb'] = electric_model_df['cgb'].apply(lambda x: f"{x/1e-15:.4}") \
-      if 'cgb' in electric_model_df.columns else zeros(len(electric_model_df))
-    electric_model_df['cgg'] = electric_model_df['cgg'].apply(lambda x: f"{x/1e-15:.4}") \
-      if 'cgg' in electric_model_df.columns else zeros(len(electric_model_df))
-    
-    electric_model_df = electric_model_df.rename(columns={
-      'gm': 'Gm [mS]',
-      'gds': 'Gds [uS]',
-      'ft': 'Ft [GHz]',
-      'av': 'Av [dB]',
-      'jd': 'Jd [F/m]',
-      'cgs': 'Cgs [fF]',
-      'cgd': 'Cgd [fF]',
-      'cgb': 'Cgb [fF]',
-      'cgg': 'Cgg [fF]',
-    })
-    
-    electric_model_df['name'] = args['<name>'] \
-      if args['--name'] else  [f'M{i}' for i in range(len(electric_model_df))]
     
     table_fig.add_trace(
       go.Table(
@@ -129,14 +65,10 @@ class GuiApp:
       Interpolated values are not supported for Graph visualization. \
         Please use a valid channel length: {self.device.lut['lch'].unique()}"
     
-    sizing_spec = SizingSpecification(
-      vgs=dcop.vgs,
-      vds=dcop.vds,
-      vsb=dcop.vsb,
-    )
+    sizing_spec_df = dcop_df[[col for col in dcop_df.columns if col.startswith('V')]]
     
     vds_vsb_pairs = set([
-      (vds, vsb) for vds in sizing_spec.to_df()['vds'] for vsb in sizing_spec.to_df()['vsb']])
+      (float(vds), float(vsb)) for vds in sizing_spec_df['Vds [V]'] for vsb in sizing_spec_df['Vsb [V]']])
     
     for vds, vsb in vds_vsb_pairs:
       if vds not in self.device.lut['vds'].unique():
