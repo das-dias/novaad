@@ -25,15 +25,15 @@ Usage:
 Options:
   -h --help       Show this screen.
   --version       Show version.
-  --vgs           Gate-Source Voltage [default: 0.8].
-  --vds           Drain-Source Voltage [default: 0.8].
-  --vsb           Substrate Voltage [default: 0.0].
-  --lch           Channel Length [default: 180e-9].
-  --gmid          Transconductance Efficiency [default: 10.0].
-  --ids           Drain Current [default: 100e-6].
-  --wch           Channel Width [default: 10e-6].
-  --cgg           Gate-Source Capacitance [default: 10e-15].
-  --ron           On-Resistance [default: 10.0].
+  --vgs           Gate-Source Voltage.
+  --vds           Drain-Source Voltage.
+  --vsb           Substrate Voltage.
+  --lch           Channel Length.
+  --gmid          Transconductance Efficiency.
+  --ids           Drain Current.
+  --wch           Channel Width.
+  --cgg           Gate-Source Capacitance.
+  --ron           On-Resistance.
   COMMAND_FILE    Input Command File.
   --gui           Launch GUI.
   --lch-plot      Channel lengths to include in plot [default: all].
@@ -44,11 +44,10 @@ Options:
 from docopt import docopt, DocoptExit
 from warnings import warn
 from pathlib import Path
-
 from pprint import pprint
 
 from yaml import safe_load, safe_dump
-
+from numpy import log10, zeros
 from novaad import Device, SizingSpecification, DcOp, Sizing, GuiApp
 
 import pdb
@@ -102,26 +101,93 @@ def device_sizing(args, cfg) -> bool:
   )
   
   sizing_spec = SizingSpecification(
-    vgs=float(args['--vgs']),
-    vds=float(args['--vds']),
-    vsb=float(args['--vsb']),
-    lch=float(args['--lch']),
-    gmoverid=float(args['--gmid'])
+    vgs=[float(v) for v in args['<vgs>']] if args['--vgs'] else [device.lut['vgs'].mean().astype(float)],
+    vds=[float(v) for v in args['<vds>']] if args['--vds'] else [device.lut['vds'].mean().astype(float)],
+    vsb=[float(v) for v in args['<vsb>']] if args['--vsb'] else [device.lut['vsb'].min().astype(float)],
+    lch=[float(v) for v in args['<lch>']] if args['--lch'] else [device.lut['lch'].min().astype(float)],
+    gmoverid=[float(v) for v in args['<gmid>']] if args['--gmid'] else [device.lut['gmoverid'].mean().astype(float)],
+    ids = [float(v) for v in args['<ids>']] if args['--ids'] else None,
+    gm = [float(v) for v in args['<gm>']] if args['--gm'] else None
   )
-  if args['--ids']:
-    sizing_spec.ids = float(args['--ids'])
-  if args['--gm']:
-    sizing_spec.ids = None
-    sizing_spec.gm = float(args['--gm'])
+  if not args['--gm'] and not args['--ids']:
+    warn ("No 'gm' or 'ids' specified. Using mean 'gm' as default.")
+    sizing_spec.gm = [device.lut['gm'].mean().astype(float)]
   dcop, sizing = device.sizing(sizing_spec, return_dcop=True)
+  electric_model = device.electric_model(dcop, sizing)
+  
+  # format info for output to SI units
+  
+  dcop_df = dcop.to_df()
+  sizing_df = sizing.to_df()
+  
+  electric_model_df = electric_model.to_df()
+  
+  
+  dcop_df['ids'] = dcop_df['ids'].apply(lambda x: f"{x/1e-6:.4}")
+  dcop_df['vgs'] = dcop_df['vgs'].apply(lambda x: f"{x:.2}")
+  dcop_df['vds'] = dcop_df['vds'].apply(lambda x: f"{x:.2}")
+  dcop_df['vsb'] = dcop_df['vsb'].apply(lambda x: f"{x:.2}")
+  
+  dcop_df = dcop_df.rename(columns={
+    'vgs': 'Vgs [V]',
+    'vds': 'Vds [V]',
+    'vsb': 'Vsb [V]',
+    'ids': 'Ids [uA]',
+  })
+  
+  sizing_df['wch'] = sizing_df['wch'].apply(lambda x: f"{x/1e-6:.4}")
+  sizing_df['lch'] = sizing_df['lch'].apply(lambda x: f"{x/1e-9:.4}")
+  
+  sizing_df = sizing_df.rename(columns={
+    'wch': 'Wch [um]',
+    'lch': 'Lch [nm]',
+  })
+  
+  electric_model_df['gm'] = electric_model_df['gm'].apply(lambda x: f"{x/1e-3:.4}") \
+    if 'gm' in electric_model_df.columns else zeros(len(electric_model_df))
+  electric_model_df['gds'] = electric_model_df['gds'].apply(lambda x: f"{x/1e-6:.4}") \
+    if 'gds' in electric_model_df.columns else zeros(len(electric_model_df))
+  electric_model_df['ft'] = electric_model_df['ft'].apply(lambda x: f"{x/1e9:.4}") \
+    if 'ft' in electric_model_df.columns else zeros(len(electric_model_df))
+  electric_model_df['av'] = electric_model_df['av'].apply(lambda x: f"{20*log10(x):.4}") \
+    if 'av' in electric_model_df.columns else zeros(len(electric_model_df))
+  electric_model_df['jd'] = electric_model_df['jd'].apply(lambda x: f"{x:.2e}") \
+    if 'jd' in electric_model_df.columns else zeros(len(electric_model_df))
+  electric_model_df['cgs'] = electric_model_df['cgs'].apply(lambda x: f"{x/1e-15:.4}") \
+    if 'cgs' in electric_model_df.columns else zeros(len(electric_model_df))
+  electric_model_df['cgd'] = electric_model_df['cgd'].apply(lambda x: f"{x/1e-15:.4}") \
+    if 'cgd' in electric_model_df.columns else zeros(len(electric_model_df))
+  electric_model_df['cgb'] = electric_model_df['cgb'].apply(lambda x: f"{x/1e-15:.4}") \
+    if 'cgb' in electric_model_df.columns else zeros(len(electric_model_df))
+  electric_model_df['cgg'] = electric_model_df['cgg'].apply(lambda x: f"{x/1e-15:.4}") \
+    if 'cgg' in electric_model_df.columns else zeros(len(electric_model_df))
+  
+  electric_model_df = electric_model_df.rename(columns={
+    'gm': 'Gm [mS]',
+    'gds': 'Gds [uS]',
+    'ft': 'Ft [GHz]',
+    'av': 'Av [dB]',
+    'jd': 'Jd [F/m]',
+    'cgs': 'Cgs [fF]',
+    'cgd': 'Cgd [fF]',
+    'cgb': 'Cgb [fF]',
+    'cgg': 'Cgg [fF]',
+  })
+  
   print()
   print("Summary:")
   print('DC-OP:')
-  print(dcop.to_df())
+  print(dcop_df)
   print()
   print('Sizing:')
-  print(sizing.to_df())
-  return True
+  print(sizing_df)
+  print()
+  print('Electric Model:')  
+  print(electric_model_df)
+
+  if args['--gui']:
+    gui = GuiApp(device)
+    gui.run_device_sizing(args, dcop, sizing, electric_model, verbose=1 if args['--verbose'] else 0, tol=1e-2)
   
 def moscap_sizing(args, cfg):
   raise NotImplementedError("MOSCAP sizing not implemented.")
@@ -134,6 +200,7 @@ def electrical_params_from_sizing_dcop(args, cfg):
 
 
 def app(args, cfg) -> bool:
+  
   if args['--verbose']:
     print('Arguments:')
     pprint(args)
@@ -141,17 +208,12 @@ def app(args, cfg) -> bool:
     print('Configuration:')
     pprint(cfg)
     
-  if args['--gui']:
-    gui = GuiApp(cfg)
-    gui.run(args, verbose=1 if args['--verbose'] else 0, tol=1e-2)
-  if args['--gmid']:
+  if args['--gmid'] or ( not args['--ron'] and not args['--cgg']):
     return device_sizing(args, cfg)
   if args['--ron']:
     return switch_sizing(args, cfg)
   if args['--cgg']:
     return moscap_sizing(args, cfg)
-  if args['--wch']:
-    return electrical_params_from_sizing_dcop(args, cfg)
   
   return False
 
@@ -180,15 +242,15 @@ def config(args):
 def main():  
   args = docopt(__doc__, version='novaad 0.1')
   cfg = config(args)
-  if not args["<command-file>"]:
+  if not args["COMMAND_FILE"]:
     app(args, cfg)
   else:
-    fp = Path(args["<command-file>"])
+    fp = Path(args["COMMAND_FILE"])
     assert fp.exists(), "Command file does not exist."
     assert fp.is_file(), "Command file must be a file."
     ext = fp.suffixes[0] if len(fp.suffixes) > 0 else ''
     assert ext in ['.txt', ''], "Command file must be a text file."
-    with open(args["<command-file>"], 'r') as f:
+    with open(args["COMMAND_FILE"], 'r') as f:
       for line in f.readlines():
         line = line if len(line) > 0 else '-h'
         argv = line.split()

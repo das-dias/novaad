@@ -5,109 +5,21 @@ import plotly.express as px
 from pathlib import Path
 from warnings import warn
 from pandas import DataFrame, merge, concat
-from numpy import log10, ceil
+from numpy import log10, ceil, zeros
 from itertools import cycle
 from novaad import Device, SizingSpecification, DcOp, ElectricModel, Sizing
 
 
 class GuiApp:
-  def __init__(self, config, **kwargs):
-    self.cfg = config
-    self.dcop_df = None
-    self.sizing_df = None
-    self.electric_model_df = None
+  def __init__(self, device:Device, **kwargs):
+    self.device = device
     
-  def run(self, args, **kwargs):
+  def run_device_sizing(self, args, dcop: DcOp, sizing: Sizing, electric_model: ElectricModel, **kwargs):
     tol = kwargs.get('tol', 1e-2)
+    lch_tol = kwargs.get('lch-tol', 1e-9)
     verbose = kwargs.get('verbose', 0)
-    device_type = 'nch' if args['--nch'] else 'pch'
-    device = None
-    device_cfg = self.cfg.get(device_type, None)
-    assert device_cfg is not None, "Device ('nch' | 'pch') not found in configuration."
-    lut_path = device_cfg.get('lut-path', None)
-    assert lut_path is not None, "Device 'lut-path' not found in configuration."
-    lut_path = Path(lut_path).resolve()
-    assert lut_path is not None, "Device 'lut-path' was not resolved."
-    lut_varmap = device_cfg.get('varmap', None)
-    if lut_varmap is not None:
-      lut_varmap = {v: k for k, v in lut_varmap.items()}
-    
-    bsim4_params_path = device_cfg.get('bsim4-params-path', None)
-    if bsim4_params_path is not None:
-      bsim4_params_path = Path(bsim4_params_path).resolve()
-    bsim4_params_varmap = device_cfg.get('bsim4-params-varmap', None)
-    if bsim4_params_varmap is not None:
-      bsim4_params_varmap = {k: v for k, v in bsim4_params_varmap.items()}
-    reference_width = self.cfg.get('ref-width', None)
-    if reference_width is None:
-      warn("Reference width not found in configuration.")
-      warn("Using default reference width of 10 um.")
-      reference_width = 10e-6
-    reference_width = float(reference_width)
-    device = Device(
-      lut_path, 
-      lut_varmap=lut_varmap, 
-      bsim4params_path=bsim4_params_path, 
-      bsim4params_varmap=bsim4_params_varmap, 
-      ref_width=reference_width,
-      device_type=device_type
-    )
-    
-    target_lch = args.get('--lch', None)
-    if target_lch is None: 
-      target_lch = device.lut['lch'].unique().tolist()
-    else:
-      target_lch = [float(l) for l in target_lch] if isinstance(target_lch, list) else [float(target_lch)]
-      
-    
-    # Update output tables
-    vgs = [float(v) for v in args['--vgs']] if isinstance(args['--vgs'], list) else [float(args['--vgs'])]
-    vds = [float(v) for v in args['--vds']] if isinstance(args['--vds'], list) else [float(args['--vds'])]
-    vsb = [float(v) for v in args['--vsb']] if isinstance(args['--vsb'], list) else [float(args['--vsb'])]
-    sizing_spec = SizingSpecification(
-      vgs=vgs,
-      vds=vds,
-      vsb=vsb,
-      lch=target_lch,
-    )
-    sizing = Sizing(
-      lch=sizing_spec.lch,
-    )
-    dcop = DcOp(
-      vgs=sizing_spec.vgs,
-      vds=sizing_spec.vds,
-      vsb=sizing_spec.vsb,
-    )
-    if args['--wch']:
-      sizing.wch = [float(w) for w in args['--wch']] if isinstance(args['--wch'], list) else [float(args['--wch'])]
-      dcop.ids = [float(i) for i in args['--ids']] if isinstance(args['--ids'], list) else [float(args['--ids'])]
-    elif args['--gmid']:
-      sizing_spec.gmoverid= [float(g) for g in args['--gmid']] if isinstance(args['--gmid'], list) else [float(args['--gmid'])]
-      if args['--ids']:
-        sizing_spec.ids = [float(i) for i in args['--ids']] if isinstance(args['--ids'], list) else [float(args['--ids'])]
-      else:
-        sizing_spec.ids = None
-        sizing_spec.gm = [float(g) for g in args['--gm']] if isinstance(args['--gm'], list) else [float(args['--gm'])]
-      dcop, sizing = device.sizing(sizing_spec, return_dcop=True)
-    
-    electric_model = device.electric_model(dcop, sizing)
-    
-    self.dcop_df = dcop.to_df()
-    self.sizing_df = sizing.to_df()
-    self.electric_model_df = electric_model.to_df()
-    
     
     # Update plots
-    # Obtain the closest channel length values in the LUT
-    
-    sizing_spec = SizingSpecification(
-      vgs=vgs,
-      vds=vds,
-      vsb=vsb,
-      lch=target_lch,
-    )
-    sizing_spec_df = sizing_spec.to_df()
-    
     table_fig = make_subplots(
       rows=3, cols=1, 
       subplot_titles=(
@@ -121,44 +33,110 @@ class GuiApp:
              [{"type": "table"}],
             ]
     )
+    
+    dcop_df = dcop.to_df()
+    sizing_df = sizing.to_df()
+    electric_model_df = electric_model.to_df()
+    
+    # format info for output to SI units
+    dcop_df['ids'] = dcop_df['ids'].apply(lambda x: f"{x/1e-6:.4}")
+    dcop_df['vgs'] = dcop_df['vgs'].apply(lambda x: f"{x:.2}")
+    dcop_df['vds'] = dcop_df['vds'].apply(lambda x: f"{x:.2}")
+    dcop_df['vsb'] = dcop_df['vsb'].apply(lambda x: f"{x:.2}")
+    
+    dcop_df = dcop_df.rename(columns={
+      'vgs': 'Vgs [V]',
+      'vds': 'Vds [V]',
+      'vsb': 'Vsb [V]',
+      'ids': 'Ids [uA]',
+    })
+    
+    sizing_df['wch'] = sizing_df['wch'].apply(lambda x: f"{x/1e-6:.4}")
+    sizing_df['lch'] = sizing_df['lch'].apply(lambda x: f"{x/1e-9:.4}")
+    
+    sizing_df = sizing_df.rename(columns={
+      'wch': 'Wch [um]',
+      'lch': 'Lch [nm]',
+    })
+    
+    electric_model_df['gm'] = electric_model_df['gm'].apply(lambda x: f"{x/1e-3:.4}") \
+      if 'gm' in electric_model_df.columns else zeros(len(electric_model_df))
+    electric_model_df['gds'] = electric_model_df['gds'].apply(lambda x: f"{x/1e-6:.4}") \
+      if 'gds' in electric_model_df.columns else zeros(len(electric_model_df))
+    electric_model_df['ft'] = electric_model_df['ft'].apply(lambda x: f"{x/1e9:.4}") \
+      if 'ft' in electric_model_df.columns else zeros(len(electric_model_df))
+    electric_model_df['av'] = electric_model_df['av'].apply(lambda x: f"{20*log10(x):.4}") \
+      if 'av' in electric_model_df.columns else zeros(len(electric_model_df))
+    electric_model_df['jd'] = electric_model_df['jd'].apply(lambda x: f"{x:.2e}") \
+      if 'jd' in electric_model_df.columns else zeros(len(electric_model_df))
+    electric_model_df['cgs'] = electric_model_df['cgs'].apply(lambda x: f"{x/1e-15:.4}") \
+      if 'cgs' in electric_model_df.columns else zeros(len(electric_model_df))
+    electric_model_df['cgd'] = electric_model_df['cgd'].apply(lambda x: f"{x/1e-15:.4}") \
+      if 'cgd' in electric_model_df.columns else zeros(len(electric_model_df))
+    electric_model_df['cgb'] = electric_model_df['cgb'].apply(lambda x: f"{x/1e-15:.4}") \
+      if 'cgb' in electric_model_df.columns else zeros(len(electric_model_df))
+    electric_model_df['cgg'] = electric_model_df['cgg'].apply(lambda x: f"{x/1e-15:.4}") \
+      if 'cgg' in electric_model_df.columns else zeros(len(electric_model_df))
+    
+    electric_model_df = electric_model_df.rename(columns={
+      'gm': 'Gm [mS]',
+      'gds': 'Gds [uS]',
+      'ft': 'Ft [GHz]',
+      'av': 'Av [dB]',
+      'jd': 'Jd [F/m]',
+      'cgs': 'Cgs [fF]',
+      'cgd': 'Cgd [fF]',
+      'cgb': 'Cgb [fF]',
+      'cgg': 'Cgg [fF]',
+    })
+    
     table_fig.add_trace(
       go.Table(
-        header=dict(values=self.dcop_df.columns),
-        cells=dict(values=[self.dcop_df[k].tolist() for k in self.dcop_df.columns])
+        header=dict(values=dcop_df.columns),
+        cells=dict(values=[dcop_df[k].tolist() for k in dcop_df.columns])
       ), row=1, col=1
     )
     table_fig.add_trace(
       go.Table(
-        header=dict(values=self.sizing_df.columns),
-        cells=dict(values=[self.sizing_df[k].tolist() for k in self.sizing_df.columns])
+        header=dict(values=sizing_df.columns),
+        cells=dict(values=[sizing_df[k].tolist() for k in sizing_df.columns])
       ), row=2, col=1
     )
     table_fig.add_trace(
       go.Table(
-        header=dict(values=self.electric_model_df.columns),
-        cells=dict(values=[self.electric_model_df[k].tolist() for k in self.electric_model_df.columns])
+        header=dict(values=electric_model_df.columns),
+        cells=dict(values=[electric_model_df[k].tolist() for k in electric_model_df.columns])
       ), row=3, col=1
     )
     table_fig.show()
     
-    # for each length on the returned plot data, plot a curve, labelling the data
+    # Update graph plots
     
-    # get set of unique (vds, vsb) pairs
-    
-    target_lch = args.get('--lch-plot', 'all')
-    if target_lch == 'all':
-      target_lch = device.lut['lch'].unique().tolist()
-    else:
-      target_lch = [float(l) for l in target_lch] if isinstance(target_lch, list) else [float(target_lch)]
-    
-    assert all([l in device.lut['lch'].unique() for l in target_lch]), f"Invalid channel length. \
+    target_lch = [float(l) for l in args['<lch-plot>']] if args['--lch-plot'] else ['all']
+    if target_lch[0] == 'all':
+      target_lch = self.device.lut['lch'].unique().tolist()
+      
+    assert all([l in self.device.lut['lch'].unique() for l in target_lch]), f"Invalid channel length. \
       Interpolated values are not supported for Graph visualization. \
-        Please use a valid channel length: {device.lut['lch'].unique()}"
+        Please use a valid channel length: {self.device.lut['lch'].unique()}"
+    
+    sizing_spec = SizingSpecification(
+      vgs=dcop.vgs,
+      vds=dcop.vds,
+      vsb=dcop.vsb,
+    )
     
     vds_vsb_pairs = set([
-      (vds, vsb) for vds in sizing_spec_df['vds'] for vsb in sizing_spec_df['vsb']])
+      (vds, vsb) for vds in sizing_spec.to_df()['vds'] for vsb in sizing_spec.to_df()['vsb']])
     
     for vds, vsb in vds_vsb_pairs:
+      if vds not in self.device.lut['vds'].unique():
+        warn(f"Invalid Vds value: {vds}. Using nearest value.")
+        vds = self.device.lut['vds'][(self.device.lut['vds']-vds).abs().argsort()[0]]
+      if vsb not in self.device.lut['vsb'].unique():
+        warn(f"Invalid Vsb value: {vsb}. Using nearest value.")
+        vsb = self.device.lut['vsb'][(self.device.lut['vsb']-vsb).abs().argsort()[0]]
+      
       fig = make_subplots(
         rows=3, cols=2, 
         subplot_titles=(
@@ -183,16 +161,16 @@ class GuiApp:
       for l in target_lch:
         if verbose > 0:
           print(f"Processing lch={l}...")
+          
         lch = int(ceil(l/1e-9))
         query = f"abs(vds-{vds})<={tol} & abs(vsb-{vsb})<={tol}"
-        query = f"lch == {l} & {query}"
-        
-        gm_id_vs_vgs = device.wave_vs_wave("gmoverid", "vgs", query=query)
-        gm_id_vs_jd = device.wave_vs_wave("gmoverid", "jd", query=query)
-        ft_vs_jd = device.wave_vs_wave("ft", "jd", query=query)
-        av_vs_gm_id = device.wave_vs_wave("av", "gmoverid", query=query)
-        fom_av_bw_vs_jd = device.wave_vs_wave("ft*av", "jd", query=query)
-        fom_noise_bw_vs_jd = device.wave_vs_wave("ft*gmoverid", "jd", query=query)
+        query = f"abs(lch-{l})<={lch_tol} & {query}"
+        gm_id_vs_vgs = self.device.wave_vs_wave("gmoverid", "vgs", query=query)
+        gm_id_vs_jd = self.device.wave_vs_wave("gmoverid", "jd", query=query)
+        ft_vs_jd = self.device.wave_vs_wave("ft", "jd", query=query)
+        av_vs_gm_id = self.device.wave_vs_wave("av", "gmoverid", query=query)
+        fom_av_bw_vs_jd = self.device.wave_vs_wave("ft*av", "jd", query=query)
+        fom_noise_bw_vs_jd = self.device.wave_vs_wave("ft*gmoverid", "jd", query=query)
         
         aux_df = gm_id_vs_vgs
         aux_df = merge(aux_df, gm_id_vs_jd, how='outer')
@@ -314,7 +292,12 @@ class GuiApp:
       
       fig.update_layout(layout)
       fig.show()
-    
+      
+  def run_moscap_sizing(self, args, **kwargs):
+    raise NotImplementedError("MOSCAP sizing not implemented.")
+  
+  def run_switch_sizing(self, args, **kwargs):
+    raise NotImplementedError("Switch sizing not implemented.")
     
 # Run the app
 if __name__ == '__main__':

@@ -210,8 +210,6 @@ class Device:
     yxcols = list(set(ycols+xcols))
     newdf = self.lut[yxcols]
     
-    print(target)
-    
     # assert target points have all the same length
     assert all([len(target[col]) == len(target[xcols[0]]) for col in xcols]), "Invalid target points. All target points must have the same length"
     target_points = squeeze(array(list(target.values())))
@@ -336,13 +334,8 @@ class Device:
       "jd": target_jd.tolist()
     }
     
-    print(target)
-    
     reference_electric_model = self.look_up(ycols, target, **kwargs)
-    #NOTE: simple model assuming linear scaling with channel width
-    #FIXME: Use bsim4 model to effectively scale the device
     electric_model = ElectricModel()
-    
     for col in [col for col in electric_model.__annotations__ if col in reference_electric_model.columns]:
       electric_model.__setattr__(col, reference_electric_model[col].values)
       if (col.startswith('c') or col.startswith('g') ):# capacitances or conductances
