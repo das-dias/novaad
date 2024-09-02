@@ -70,8 +70,9 @@ class BaseParametricObject:
       if isinstance(val, list):
         return val
       return [val]  
-    lists= [to_list(getattr(self, attr)) for attr in self.__annotations__ if getattr(self, attr) is not None] 
-    prod = cartesian_product(lists)
+    lists= [to_list(getattr(self, attr)) for attr in self.__annotations__ if getattr(self, attr) is not None]
+    assert all([len(lists[0]) == len(lst) for lst in lists]), "Invalid list lengths. All lists must have the same length."
+    prod = array(lists)
     columns = [attr for attr in self.__annotations__ if getattr(self, attr) is not None]
     return DataFrame({
       col: prod[columns.index(col)]
@@ -83,6 +84,20 @@ class BaseParametricObject:
 
   def to_array(self) -> ndarray:
     return self.__array__()
+  
+  def items(self):
+    return self.to_df().to_dict().items()
+  
+  def __getitem__(self, key):
+    return getattr(self, key)
+  
+  def __setitem__(self, key, value):
+    setattr(self, key, value)
+    
+  def __iter__(self):
+    for attr in self.__annotations__:
+      yield getattr(self, attr)
+  
 
 @dataclass
 class Sizing(BaseParametricObject):
@@ -194,7 +209,13 @@ class Device:
     dist_metric_kwargs = kwargs.get("dist_metric_kwargs", {})
     yxcols = list(set(ycols+xcols))
     newdf = self.lut[yxcols]
-    target_points = squeeze(array(cartesian_product(list(target.values()))))
+    
+    print(target)
+    
+    # assert target points have all the same length
+    assert all([len(target[col]) == len(target[xcols[0]]) for col in xcols]), "Invalid target points. All target points must have the same length"
+    target_points = squeeze(array(list(target.values())))
+    
     if len(target_points.shape) == 1:
       target_points = target_points.reshape(-1, 1)
     target_df = DataFrame(target_points.T, columns=xcols)
@@ -275,7 +296,7 @@ class Device:
       "gmoverid": sizing_spec.gmoverid if isinstance(sizing_spec.gmoverid, list) else [sizing_spec.gmoverid]
     }
     closest_target = self.look_up(ycols, target, return_xy=True, **kwargs)
-    sizing = Sizing(lch=closest_target["lch"].values)
+    sizing = Sizing(lch=closest_target["lch"].values.tolist())
     dcop = DcOp(
       vgs=sizing_spec.vgs, 
       vds=sizing_spec.vds, 
@@ -283,10 +304,11 @@ class Device:
     )
     if sizing_spec.gm is None:
       dcop.ids = sizing_spec.ids
-      sizing.wch = sizing_spec.ids / closest_target["jd"].values
+      sizing.wch = (array(sizing_spec.ids) / closest_target["jd"].values).tolist()
     else:
-      dcop.ids = sizing_spec.gm / closest_target["gmoverid"].values
-      sizing.wch = dcop.ids / closest_target["jd"].values
+      dcop.ids = (array(sizing_spec.gm) / closest_target["gmoverid"].values).tolist()
+      sizing.wch = (array(dcop.ids) / closest_target["jd"].values).tolist()
+    
     return (dcop, sizing) if return_dcop else sizing
   
   def electric_model(self, dcop: DcOp, sizing: Sizing, **kwargs) -> ElectricModel:
@@ -299,7 +321,7 @@ class Device:
     Returns:
         Dict: Electrical model parameters
     """
-    wch_ratio = sizing.wch / self.ref_width
+    wch_ratio = array(sizing.wch) / self.ref_width
     target_jd = array([dcop.ids]).flatten() / array([sizing.wch]).flatten() 
     kwargs = {
       "interp_method": kwargs.get("interp_method", "pchip"),
@@ -313,15 +335,19 @@ class Device:
       "lch": sizing.lch if isinstance(sizing.lch, list) else [sizing.lch],
       "jd": target_jd.tolist()
     }
+    
+    print(target)
+    
     reference_electric_model = self.look_up(ycols, target, **kwargs)
-    pdb.set_trace()
     #NOTE: simple model assuming linear scaling with channel width
     #FIXME: Use bsim4 model to effectively scale the device
     electric_model = ElectricModel()
+    
     for col in [col for col in electric_model.__annotations__ if col in reference_electric_model.columns]:
       electric_model.__setattr__(col, reference_electric_model[col].values)
       if (col.startswith('c') or col.startswith('g') ):# capacitances or conductances
         electric_model.__setattr__(col, electric_model.__getattribute__(col)*wch_ratio)
+      electric_model.__setattr__(col, electric_model.__getattribute__(col).tolist())
     return electric_model
   
   def thermal_noise_psd(self, dcop: DcOp, sizing: Sizing, **kwargs):
@@ -333,30 +359,30 @@ class Device:
   def noise_summary(self, dcop: DcOp, sizing: Sizing, **kwargs):
     raise NotImplementedError
   
-  def wave_vs_wave(self, ycol:str, xcol:str) -> Optional[DataFrame]:
+  def wave_vs_wave(self, ycol:str, xcol:str, query:str = None) -> Optional[DataFrame]:
     ycol_exp = parse_expression(ycol)
     xcol_exp = parse_expression(xcol)
     ycol_arr: Optional[ndarray] = None
     xcol_arr: Optional[ndarray] = None
-    
+    lut = self.lut.query(query) if query else self.lut
     if ycol_exp[-1] is not None:
-      assert ycol_exp[1] in self.lut.columns, f"Invalid ycol: {ycol_exp[1]}. Possible: {self.lut.columns}"
-      assert ycol_exp[0] in self.lut.columns, f"Invalid ycol: {ycol_exp[0]}. Possible: {self.lut.columns}"
-      ycol_arr = eval(f"self.lut.{ycol_exp[0]} {ycol_exp[2].value} self.lut.{ycol_exp[1]}").to_numpy()
+      assert ycol_exp[1] in lut.columns, f"Invalid ycol: {ycol_exp[1]}. Possible: {lut.columns}"
+      assert ycol_exp[0] in lut.columns, f"Invalid ycol: {ycol_exp[0]}. Possible: {lut.columns}"
+      ycol_arr = eval(f"lut.{ycol_exp[0]} {ycol_exp[2].value} lut.{ycol_exp[1]}").to_numpy()
     else:
-      ycol_arr = self.lut[ycol_exp[0]].to_numpy()
+      ycol_arr = lut[ycol_exp[0]].to_numpy()
     
     if xcol_exp[-1] is not None:
-      assert xcol_exp[1] in self.lut.columns, f"Invalid ycol: {xcol_exp[1]}. Possible: {self.lut.columns}"
-      assert xcol_exp[0] in self.lut.columns, f"Invalid ycol: {xcol_exp[0]}. Possible: {self.lut.columns}"
-      xcol_arr = eval(f"self.lut.{xcol_exp[0]} {xcol_exp[2].value} self.lut.{xcol_exp[1]}").to_numpy()
+      assert xcol_exp[1] in lut.columns, f"Invalid ycol: {xcol_exp[1]}. Possible: {lut.columns}"
+      assert xcol_exp[0] in lut.columns, f"Invalid ycol: {xcol_exp[0]}. Possible: {lut.columns}"
+      xcol_arr = eval(f"lut.{xcol_exp[0]} {xcol_exp[2].value} lut.{xcol_exp[1]}").to_numpy()
     else:
-      xcol_arr = self.lut[xcol_exp[0]].to_numpy()
+      xcol_arr = lut[xcol_exp[0]].to_numpy()
     
     if ycol_arr is None or xcol_arr is None:
       return None
     
-    return DataFrame({xcol: xcol_arr,ycol: ycol_arr})
+    return DataFrame({xcol: xcol_arr,ycol: ycol_arr}).sort_values(by=xcol)
   
 
 # Examples

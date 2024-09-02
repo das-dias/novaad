@@ -16,9 +16,8 @@ Examples:
     novaad --pch --vgs=0.8 --vds=0.5 --vsb=0.0 --ids=500e-6 --lch=180e-9 --wch=18e-6
 
 Usage:
-  novaad (--nch | --pch | --gui) [--vgs=<vgs> --vds=<vds> --vsb=<vsb> --lch=<lch> ( --wch=<wch> |  --gmid=<gmid> (--ids=<ids> | --gm=<gm>) | --ron=<ron> | --cgg=<cgg> )] [--verbose]
-  novaad <command-file>
-  novaad --gui
+  novaad (--nch | --pch) [--gui] [ --lch-plot <lch-plot> ... ] [--vgs <vgs> ... --vds <vds> ... --vsb <vsb> ... --lch <lch> ... ( --wch <wch> ... |  --gmid <gmid> ... (--ids <ids> ... | --gm <gm> ...) | --ron <ron> ... | --cgg <cgg> ...)] [--verbose]
+  novaad COMMAND_FILE
   novaad (-h | --help)
   novaad --version
   novaad --setup-config <cfg-path>
@@ -26,17 +25,19 @@ Usage:
 Options:
   -h --help       Show this screen.
   --version       Show version.
-  --vgs <vgs>     Gate-Source Voltage [default: 0.8].
-  --vds <vds>     Drain-Source Voltage [default: 0.8].
-  --vsb <vsb>     Substrate Voltage [default: 0.0].
-  --lch <lch>     Channel Length [default: 180e-9].
-  --gmid <gmid>   Transconductance Efficiency [default: 10.0].
-  --ids <ids>     Drain Current [default: 100e-6].
-  --wch <wch>     Channel Width [default: 10e-6].
-  --cgg <cgg>     Gate-Source Capacitance [default: 10e-15].
-  --ron <ron>     On-Resistance [default: 10.0].
-  <command-file>  Input Command File.
+  --vgs           Gate-Source Voltage [default: 0.8].
+  --vds           Drain-Source Voltage [default: 0.8].
+  --vsb           Substrate Voltage [default: 0.0].
+  --lch           Channel Length [default: 180e-9].
+  --gmid          Transconductance Efficiency [default: 10.0].
+  --ids           Drain Current [default: 100e-6].
+  --wch           Channel Width [default: 10e-6].
+  --cgg           Gate-Source Capacitance [default: 10e-15].
+  --ron           On-Resistance [default: 10.0].
+  COMMAND_FILE    Input Command File.
   --gui           Launch GUI.
+  --lch-plot      Channel lengths to include in plot [default: all].
+  --verbose       Verbose Output.
   --setup-config  Set Configuration File Path.
 """
 
@@ -80,10 +81,6 @@ def device_sizing(args, cfg) -> bool:
   lut_varmap = device_cfg.get('varmap', None)
   if lut_varmap is not None:
     lut_varmap = {v: k for k, v in lut_varmap.items()}
-  if verbose > 0:
-    print()
-    print("Device Configuration:")
-    pprint(device_cfg)
   
   bsim4_params_path = Path(device_cfg.get('bsim4-params-path', None)).resolve()
   bsim4_params_varmap = device_cfg.get('bsim4-params-varmap', None)
@@ -104,12 +101,6 @@ def device_sizing(args, cfg) -> bool:
     device_type=device_type
   )
   
-  if verbose > 0:
-    print()
-    print("Device LUT:")
-    print(device.lut.columns)
-    print(device.lut.head())
-  
   sizing_spec = SizingSpecification(
     vgs=float(args['--vgs']),
     vds=float(args['--vds']),
@@ -127,6 +118,7 @@ def device_sizing(args, cfg) -> bool:
   print("Summary:")
   print('DC-OP:')
   print(dcop.to_df())
+  print()
   print('Sizing:')
   print(sizing.to_df())
   return True
@@ -140,12 +132,18 @@ def switch_sizing(args, cfg):
 def electrical_params_from_sizing_dcop(args, cfg):
   raise NotImplementedError("Electrical parameters from sizing and DC-OP not implemented.")
 
-  
 
 def app(args, cfg) -> bool:
+  if args['--verbose']:
+    print('Arguments:')
+    pprint(args)
+    
+    print('Configuration:')
+    pprint(cfg)
+    
   if args['--gui']:
-    gui = GuiApp()
-    return gui.run()
+    gui = GuiApp(cfg)
+    gui.run(args, verbose=1 if args['--verbose'] else 0, tol=1e-2)
   if args['--gmid']:
     return device_sizing(args, cfg)
   if args['--ron']:
