@@ -7,16 +7,16 @@ Examples:
     Size a device from a DC-OP and a channel 
     length (aliasing a intrinsic gain spec.).
     
-    novaad --nch --vgs=0.8 --vds=0.5 --vsb=0.0 --lch=180e-9 --gmid=10 --gm=1e-3
+    novaad --typ nch --vgs=0.8 --vds=0.5 --vsb=0.0 --lch=180e-9 --gmid=10 --gm=1e-3
 
   * Backward usage of Gm/Id design model:
     Obtain the electrical parameters of a 
     device from its W/L sizing and DC-OP.
     
-    novaad --pch --vgs=0.8 --vds=0.5 --vsb=0.0 --ids=500e-6 --lch=180e-9 --wch=18e-6
+    novaad --typ nch --vgs=0.8 --vds=0.5 --vsb=0.0 --ids=500e-6 --lch=180e-9 --wch=18e-6
 
 Usage:
-  novaad (--nch | --pch) [--gui] [ --lch-plot <lch-plot> ... ] [--vgs <vgs> ... --vds <vds> ... --vsb <vsb> ... --lch <lch> ... ( --wch <wch> ... |  --gmid <gmid> ... (--ids <ids> ... | --gm <gm> ...) | --ron <ron> ... | --cgg <cgg> ...)] [--verbose]
+  novaad --typ [nch | pch] [--name <name> ...] [--gui] [ --lch-plot <lch-plot> ... ] [--vgs <vgs> ... --vds <vds> ... --vsb <vsb> ... --lch <lch> ... ( --wch <wch> ... |  --gmid <gmid> ... (--ids <ids> ... | --gm <gm> ...) | --ron <ron> ... | --cgg <cgg> ...)] [--verbose]
   novaad COMMAND_FILE
   novaad (-h | --help)
   novaad --version
@@ -59,16 +59,14 @@ global __DEFAULT_CFG_PATH__
 __DEFAULT_CFG_PATH__ = str(Path(__REF_CWD__+'/cfg.yml').resolve())
 global CFG_PATH
 CFG_PATH = __DEFAULT_CFG_PATH__
-  
+
 def device_sizing(args, cfg) -> bool:
   verbose = 0
   if args['--verbose']:
     verbose = 1
   device_type = None
-  if args['--nch']:
-    device_type = 'nch'
-  elif args['--pch']:
-    device_type = 'pch'
+  if args['nch']: device_type = 'nch'
+  elif args['pch']: device_type = 'pch'
   else: raise ValueError("Device type not found in arguments.")
   device = None
   device_cfg = cfg.get(device_type, None)
@@ -122,7 +120,6 @@ def device_sizing(args, cfg) -> bool:
   
   electric_model_df = electric_model.to_df()
   
-  
   dcop_df['ids'] = dcop_df['ids'].apply(lambda x: f"{x/1e-6:.4}")
   dcop_df['vgs'] = dcop_df['vgs'].apply(lambda x: f"{x:.2}")
   dcop_df['vds'] = dcop_df['vds'].apply(lambda x: f"{x:.2}")
@@ -135,6 +132,9 @@ def device_sizing(args, cfg) -> bool:
     'ids': 'Ids [uA]',
   })
   
+  dcop_df['name'] = args['<name>'] \
+    if args['--name'] else  [f'M{i}' for i in range(len(dcop_df))]
+  
   sizing_df['wch'] = sizing_df['wch'].apply(lambda x: f"{x/1e-6:.4}")
   sizing_df['lch'] = sizing_df['lch'].apply(lambda x: f"{x/1e-9:.4}")
   
@@ -142,6 +142,9 @@ def device_sizing(args, cfg) -> bool:
     'wch': 'Wch [um]',
     'lch': 'Lch [nm]',
   })
+  sizing_df['type'] = device_type
+  sizing_df['name'] = args['<name>'] \
+    if args['--name'] else  [f'M{i}' for i in range(len(sizing_df))]
   
   electric_model_df['gm'] = electric_model_df['gm'].apply(lambda x: f"{x/1e-3:.4}") \
     if 'gm' in electric_model_df.columns else zeros(len(electric_model_df))
@@ -173,6 +176,9 @@ def device_sizing(args, cfg) -> bool:
     'cgb': 'Cgb [fF]',
     'cgg': 'Cgg [fF]',
   })
+  
+  electric_model_df['name'] = args['<name>'] \
+    if args['--name'] else  [f'M{i}' for i in range(len(electric_model_df))]
   
   print()
   print("Summary:")

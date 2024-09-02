@@ -51,6 +51,9 @@ class GuiApp:
       'ids': 'Ids [uA]',
     })
     
+    dcop_df['name'] = args['<name>'] \
+      if args['--name'] else  [f'M{i}' for i in range(len(dcop_df))]
+    
     sizing_df['wch'] = sizing_df['wch'].apply(lambda x: f"{x/1e-6:.4}")
     sizing_df['lch'] = sizing_df['lch'].apply(lambda x: f"{x/1e-9:.4}")
     
@@ -58,6 +61,9 @@ class GuiApp:
       'wch': 'Wch [um]',
       'lch': 'Lch [nm]',
     })
+    sizing_df['type'] = 'nch' if args['nch'] else 'pch'
+    sizing_df['name'] = args['<name>'] \
+      if args['--name'] else  [f'M{i}' for i in range(len(sizing_df))]
     
     electric_model_df['gm'] = electric_model_df['gm'].apply(lambda x: f"{x/1e-3:.4}") \
       if 'gm' in electric_model_df.columns else zeros(len(electric_model_df))
@@ -89,6 +95,9 @@ class GuiApp:
       'cgb': 'Cgb [fF]',
       'cgg': 'Cgg [fF]',
     })
+    
+    electric_model_df['name'] = args['<name>'] \
+      if args['--name'] else  [f'M{i}' for i in range(len(electric_model_df))]
     
     table_fig.add_trace(
       go.Table(
