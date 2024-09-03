@@ -6,3 +6,4 @@ dash
 docopt
 scipy
 pydantic
+toml

@@ -101,26 +101,42 @@ class BaseParametricObject:
 
 @dataclass
 class Sizing(BaseParametricObject):
+  lch: Optional[Union[float, List[float]]]
   wch: Optional[Union[float, List[float]]] = None
-  lch: Optional[Union[float, List[float]]] = None
   
 @dataclass
 class DcOp(BaseParametricObject):
-  vgs: Optional[Union[float, List[float]]] = None
-  vds: Optional[Union[float, List[float]]] = None
-  vsb: Optional[Union[float, List[float]]] = None
+  vgs: Optional[Union[float, List[float]]]
+  vds: Optional[Union[float, List[float]]]
+  vsb: Optional[Union[float, List[float]]]
   ids: Optional[Union[float, List[float]]] = None
 
 @dataclass
-class SizingSpecification(BaseParametricObject):
-  vgs: Optional[Union[float, List[float]]] = None
-  vds: Optional[Union[float, List[float]]] = None
-  vsb: Optional[Union[float, List[float]]] = None
-  ids: Optional[Union[float, List[float]]] = None
-  # for simplicity of implementation, include specifications in DcOp as control knobs
-  lch: Optional[Union[float, List[float]]] = None
+class DeviceSizingSpecification(BaseParametricObject):
+  vgs: Optional[Union[float, List[float]]]
+  vds: Optional[Union[float, List[float]]]
+  vsb: Optional[Union[float, List[float]]] 
+  lch: Optional[Union[float, List[float]]]
   gmoverid: Optional[Union[float, List[float]]] = None
+  # for simplicity of implementation, include DcOp
+  ids: Optional[Union[float, List[float]]] = None
   gm: Optional[Union[float, List[float]]] = None
+
+@dataclass
+class MoscapSizingSpecification(BaseParametricObject):
+  vgs: Optional[Union[float, List[float]]]
+  vds: Optional[Union[float, List[float]]]
+  vsb: Optional[Union[float, List[float]]] 
+  lch: Optional[Union[float, List[float]]]
+  cgg: Optional[Union[float, List[float]]] = None
+
+@dataclass
+class SwitchSizingSpecification(BaseParametricObject):
+  vgs: Optional[Union[float, List[float]]]
+  vds: Optional[Union[float, List[float]]]
+  vsb: Optional[Union[float, List[float]]] 
+  lch: Optional[Union[float, List[float]]]
+  ron: Optional[Union[float, List[float]]] = None
 
 @dataclass
 class ElectricModel(BaseParametricObject):
@@ -251,7 +267,7 @@ class Device:
     
     assert False, "Invalid interp_mode. Possible values: default, pandas, griddata"
   
-  def sizing(self, sizing_spec: Optional[SizingSpecification], return_dcop=False, **kwargs) -> Union[Tuple[DcOp,Sizing], Sizing]:
+  def sizing(self, sizing_spec: Optional[DeviceSizingSpecification], return_dcop=False, **kwargs) -> Union[Tuple[DcOp,Sizing], Sizing]:
     """Device sizing from DC operating point and target electric parameters
     Forward propagaton of the flow of Gm/Id method.
     Args:
@@ -260,7 +276,7 @@ class Device:
     Returns:
         DataFrame: Resulting device sizing and electrical parameters
     """
-    default_sizing = SizingSpecification(
+    default_sizing = DeviceSizingSpecification(
       vgs=self.lut["vgs"].mean(),
       vds=self.lut["vds"].mean(),
       vsb=0.0,
@@ -319,6 +335,7 @@ class Device:
     Returns:
         Dict: Electrical model parameters
     """
+    
     wch_ratio = array(sizing.wch) / self.ref_width
     target_jd = array([dcop.ids]).flatten() / array([sizing.wch]).flatten() 
     kwargs = {
@@ -453,7 +470,7 @@ def test_device_sizing(lut_varmap):
     device_type="nch", lut_varmap=lut_varmap
   )
   
-  sizing_spec = SizingSpecification(
+  sizing_spec = DeviceSizingSpecification(
     vgs=0.5, vds=0.6, vsb=0.0,
     lch=device.lut["lch"].min(), 
     gmoverid=10.0,
@@ -466,7 +483,7 @@ def test_device_sizing(lut_varmap):
   
   print(sizing.to_df())  
   
-  sizing_spec = SizingSpecification(
+  sizing_spec = DeviceSizingSpecification(
     vgs=0.5, vds=0.6, vsb=0.0,
     lch=device.lut["lch"].min(), 
     gmoverid=24.0,
@@ -485,7 +502,7 @@ def test_device_electric_model(lut_varmap):
     device_type="nch", lut_varmap=lut_varmap
   )
   
-  sizing_spec = SizingSpecification(
+  sizing_spec = DeviceSizingSpecification(
     vgs=0.5, vds=0.6, vsb=0.0,
     lch=device.lut["lch"].min(), 
     gmoverid=16.0,

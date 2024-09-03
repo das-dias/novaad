@@ -1,4 +1,4 @@
---nch
-
---nch --vgs=0.8 --vds=0.5 --vsb=0.0 --lch=180e-9 --gmid=27 --gm=1e-3
---pch
+device -i=/Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_input.toml 
+device -i=/Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_input.toml -o=/Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_output.csv
+moscap -i=/Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_input.toml
+switch -i=/Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_input.toml -o=/Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_switch_output.csv

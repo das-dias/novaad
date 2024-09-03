@@ -11,15 +11,22 @@ from novaad import Device
 
 
 class GuiApp:
-  def __init__(self, device:Device, **kwargs):
-    self.device = device
-    
-  def run_device_sizing(self, args, dcop_df: DataFrame, sizing_df: DataFrame, electric_model_df: DataFrame, **kwargs):
-    tol = kwargs.get('tol', 1e-2)
-    lch_tol = kwargs.get('lch-tol', 1e-9)
-    verbose = kwargs.get('verbose', 0)
-    
-    # Update plots
+  def __init__(self, config: dict, **kwargs):
+    self.config = config
+  
+  def show_moscap_results_table(self, args, results:DataFrame, **kwargs):
+    raise NotImplementedError("Moscap visualization not implemented.")
+  
+  def show_moscap_graphs(self, args, results: DataFrame, **kwargs):
+    raise NotImplementedError("Moscap visualization not implemented.")
+  
+  def show_switch_results_table(self, args, dcop_df: DataFrame, sizing_df: DataFrame, electric_model_df: DataFrame, **kwargs):
+    raise NotImplementedError("Switch visualization not implemented.")
+  
+  def show_switch_graphs(self, args, dcop_df: DataFrame, sizing_df: DataFrame, electric_model_df: DataFrame, **kwargs):
+    raise NotImplementedError("Switch visualization not implemented.")
+  
+  def show_device_results_table(self, args, results: DataFrame, **kwargs):
     table_fig = make_subplots(
       rows=3, cols=1, 
       subplot_titles=(
@@ -33,6 +40,32 @@ class GuiApp:
              [{"type": "table"}],
             ]
     )
+    dcop_df = DataFrame(data={
+      "Vgs [V]": results['vgs'].apply(lambda x: f"{x:.2f}"),
+      "Vds [V]": results['vds'].apply(lambda x: f"{x:.2f}"),
+      "Vsb [V]": results['vsb'].apply(lambda x: f"{x:.2f}"),
+      "Ids [uA]": results['ids'].apply(lambda x: f"{x/1e-6:.4e}"),
+    })
+    
+    sizing_df = DataFrame(data={
+      "Wch [um]": results['wch'].apply(lambda x: f"{x/1e-6:.4e}"),
+      "Lch [nm]": results['lch'].apply(lambda x: f"{x/1e-9:.4e}"),
+    })
+    
+    electric_model_df = DataFrame(data={
+      "Gm/Id [1/V]": results['gmoverid'].apply(lambda x: f"{x:.4e}"),
+      "Gm [uS]": results['gm'].apply(lambda x: f"{x/1e-6:.4e}"),
+      "Gds [uS]": results['gds'].apply(lambda x: f"{x/1e-6:.4e}"),
+      "Cgg [fF]": results['cgg'].apply(lambda x: f"{x/1e-15:.4e}"),
+      "Cgs [fF]": results['cgs'].apply(lambda x: f"{x/1e-15:.4e}"),
+      "Cgd [fF]": results['cgd'].apply(lambda x: f"{x/1e-15:.4e}"),
+      "Csb [fF]": results['csb'].apply(lambda x: f"{x/1e-15:.4e}"),
+      "Cdb [fF]": results['cdb'].apply(lambda x: f"{x/1e-15:.4e}"),
+      "Av [dB]": results['av'].apply(lambda x: f"{20*log10(x):.4}"),
+      "Ft [MHz]": results['ft'].apply(lambda x: f"{x/1e6:.4e}"),
+      "FoM Av*Ft [MHz]": results['fom_bw'].apply(lambda x: f"{x/1e6:.4e}"),
+      "FoM (Gm/Id)*Ft [Hz/V]": results['fom_nbw'].apply(lambda x: f"{x:.4e}"),
+    })
     
     
     table_fig.add_trace(
@@ -55,9 +88,16 @@ class GuiApp:
     )
     table_fig.show()
     
-    # Update graph plots
+  def show_device_graphs(self, args, **kwargs):
+    tol = kwargs.get('tol', 1e-2)
+    lch_tol = kwargs.get('lch-tol', 1e-9)
+    verbose = kwargs.get('verbose', 0)
     
-    target_lch = [float(l) for l in args['<lch-plot>']] if args['--lch-plot'] else ['all']
+    device_type = args['--type']
+    assert device_type in ['nch', 'pch'], "Invalid device type. Must be 'nch' or 'pch'."
+    self.device = Device(self.config[device_type], self.config[device_type]['varmap'], device_type, ref_width=self.config[device_type]['ref-width'])
+    
+    target_lch = [float(l) for l in args['LCH_PLOT']] if args['--lch-plot'] else ['all']
     if target_lch[0] == 'all':
       target_lch = self.device.lut['lch'].unique().tolist()
       
@@ -65,63 +105,60 @@ class GuiApp:
       Interpolated values are not supported for Graph visualization. \
         Please use a valid channel length: {self.device.lut['lch'].unique()}"
     
-    sizing_spec_df = dcop_df[[col for col in dcop_df.columns if col.startswith('V')]]
+    vds = float(args['--vds'])
+    vsb = float(args['--vsb'])
     
-    vds_vsb_pairs = set([
-      (float(vds), float(vsb)) for vds in sizing_spec_df['Vds [V]'] for vsb in sizing_spec_df['Vsb [V]']])
-    
-    for vds, vsb in vds_vsb_pairs:
-      if vds not in self.device.lut['vds'].unique():
-        warn(f"Invalid Vds value: {vds}. Using nearest value.")
-        vds = self.device.lut['vds'][(self.device.lut['vds']-vds).abs().argsort()[0]]
-      if vsb not in self.device.lut['vsb'].unique():
-        warn(f"Invalid Vsb value: {vsb}. Using nearest value.")
-        vsb = self.device.lut['vsb'][(self.device.lut['vsb']-vsb).abs().argsort()[0]]
-      
-      fig = make_subplots(
-        rows=3, cols=2, 
-        subplot_titles=(
-          "Gm/Id vs Vgs",
-          "Gm/Id vs Jd",
-          "Ft vs Jd",
-          "Av vs Gm/Id",
-          "Fom Av*Bw vs Jd",
-          "Fom Noise*Bw vs Jd"
-        )
+    if vds not in self.device.lut['vds'].unique():
+      warn(f"Invalid Vds value: {vds}. Using nearest value.")
+      vds = self.device.lut['vds'][(self.device.lut['vds']-vds).abs().argsort()[0]]
+    if vsb not in self.device.lut['vsb'].unique():
+      warn(f"Invalid Vsb value: {vsb}. Using nearest value.")
+      vsb = self.device.lut['vsb'][(self.device.lut['vsb']-vsb).abs().argsort()[0]]
+     
+    fig = make_subplots(
+      rows=3, cols=2, 
+      subplot_titles=(
+        "Gm/Id vs Vgs",
+        "Gm/Id vs Jd",
+        "Ft vs Jd",
+        "Av vs Gm/Id",
+        "Fom Av*Bw vs Jd",
+        "Fom Noise*Bw vs Jd"
       )
-      
-      layout = go.Layout(
-        title=f"Gm/Id Method @ Vds={vds:.2f}V Vsb={vsb:.2f}V",
-        font=dict(family="Arial, sans-serif", size=14, color="black")
-      )    
-      plot_df = DataFrame(
-        columns=['vgs', 'gmoverid', 'jd', 
-                'ft', 'av', 'ft*av', 'ft*gmoverid', 'lch']
-      )
-      
-      for l in target_lch:
-        if verbose > 0:
-          print(f"Processing lch={l}...")
-          
-        lch = int(ceil(l/1e-9))
-        query = f"abs(vds-{vds})<={tol} & abs(vsb-{vsb})<={tol}"
-        query = f"abs(lch-{l})<={lch_tol} & {query}"
-        gm_id_vs_vgs = self.device.wave_vs_wave("gmoverid", "vgs", query=query)
-        gm_id_vs_jd = self.device.wave_vs_wave("gmoverid", "jd", query=query)
-        ft_vs_jd = self.device.wave_vs_wave("ft", "jd", query=query)
-        av_vs_gm_id = self.device.wave_vs_wave("av", "gmoverid", query=query)
-        fom_av_bw_vs_jd = self.device.wave_vs_wave("ft*av", "jd", query=query)
-        fom_noise_bw_vs_jd = self.device.wave_vs_wave("ft*gmoverid", "jd", query=query)
+    )
+     
+    layout = go.Layout(
+      title=f"Gm/Id Method @ Vds={vds:.2f}V Vsb={vsb:.2f}V",
+      font=dict(family="Arial, sans-serif", size=14, color="black")
+    )    
+    plot_df = DataFrame(
+      columns=['vgs', 'gmoverid', 'jd', 
+              'ft', 'av', 'ft*av', 'ft*gmoverid', 'lch']
+    )
+     
+    for l in target_lch:
+      if verbose > 0:
+        print(f"Processing lch={l}...")
         
-        aux_df = gm_id_vs_vgs
-        aux_df = merge(aux_df, gm_id_vs_jd, how='outer')
-        aux_df = merge(aux_df, ft_vs_jd, how='outer')
-        aux_df = merge(aux_df, av_vs_gm_id, how='outer')
-        aux_df = merge(aux_df, fom_av_bw_vs_jd, how='outer')
-        aux_df = merge(aux_df, fom_noise_bw_vs_jd, how='outer')
-        aux_df['lch'] = str(lch) + ' nm'
-        plot_df = concat([plot_df,aux_df])
-        
+      lch = int(ceil(l/1e-9))
+      query = f"abs(vds-{vds})<={tol} & abs(vsb-{vsb})<={tol}"
+      query = f"abs(lch-{l})<={lch_tol} & {query}"
+      gm_id_vs_vgs = self.device.wave_vs_wave("gmoverid", "vgs", query=query)
+      gm_id_vs_jd = self.device.wave_vs_wave("gmoverid", "jd", query=query)
+      ft_vs_jd = self.device.wave_vs_wave("ft", "jd", query=query)
+      av_vs_gm_id = self.device.wave_vs_wave("av", "gmoverid", query=query)
+      fom_av_bw_vs_jd = self.device.wave_vs_wave("ft*av", "jd", query=query)
+      fom_noise_bw_vs_jd = self.device.wave_vs_wave("ft*gmoverid", "jd", query=query)
+      
+      aux_df = gm_id_vs_vgs
+      aux_df = merge(aux_df, gm_id_vs_jd, how='outer')
+      aux_df = merge(aux_df, ft_vs_jd, how='outer')
+      aux_df = merge(aux_df, av_vs_gm_id, how='outer')
+      aux_df = merge(aux_df, fom_av_bw_vs_jd, how='outer')
+      aux_df = merge(aux_df, fom_noise_bw_vs_jd, how='outer')
+      aux_df['lch'] = str(lch) + ' nm'
+      plot_df = concat([plot_df,aux_df])
+      
       plot_df['jd_log'] = log10(plot_df['jd'])
       plot_df['av_db'] = 20*log10(plot_df['av'])
       plot_df['ft_log'] = log10(plot_df['ft'])
@@ -233,12 +270,6 @@ class GuiApp:
       
       fig.update_layout(layout)
       fig.show()
-      
-  def run_moscap_sizing(self, args, **kwargs):
-    raise NotImplementedError("MOSCAP sizing not implemented.")
-  
-  def run_switch_sizing(self, args, **kwargs):
-    raise NotImplementedError("Switch sizing not implemented.")
     
 # Run the app
 if __name__ == '__main__':
@@ -246,6 +277,7 @@ if __name__ == '__main__':
   cfg = {
     'nch': {
       'lut-path': '/Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_nch_lut.csv',
+      'ref-width': 10e-6,
       'varmap': {
         'vgs': 'vgs_n',
         'vds': 'vds_n',
@@ -267,7 +299,6 @@ if __name__ == '__main__':
         'qs': 'qs_n',
       },
     },
-    'ref-width': 10e-6,
   }
   app = GuiApp(cfg)
   args = {
