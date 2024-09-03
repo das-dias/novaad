@@ -125,18 +125,18 @@ class DeviceSizingSpecification(BaseParametricObject):
 @dataclass
 class MoscapSizingSpecification(BaseParametricObject):
   vgs: Optional[Union[float, List[float]]]
-  vds: Optional[Union[float, List[float]]]
   vsb: Optional[Union[float, List[float]]] 
   lch: Optional[Union[float, List[float]]]
   cgg: Optional[Union[float, List[float]]] = None
+  vds: Optional[Union[float, List[float]]] = None
 
 @dataclass
 class SwitchSizingSpecification(BaseParametricObject):
   vgs: Optional[Union[float, List[float]]]
-  vds: Optional[Union[float, List[float]]]
   vsb: Optional[Union[float, List[float]]] 
   lch: Optional[Union[float, List[float]]]
   ron: Optional[Union[float, List[float]]] = None
+  vds: Optional[Union[float, List[float]]] = None
 
 @dataclass
 class ElectricModel(BaseParametricObject):
@@ -151,6 +151,7 @@ class ElectricModel(BaseParametricObject):
   csb: Optional[Union[float, List[float]]] = None
   ft: Optional[Union[float, List[float]]] = None
   av: Optional[Union[float, List[float]]] = None
+  ron: Optional[Union[float, List[float]]] = None
   
 @dataclass
 class Device:
@@ -279,9 +280,9 @@ class Device:
     default_sizing = DeviceSizingSpecification(
       vgs=self.lut["vgs"].mean(),
       vds=self.lut["vds"].mean(),
-      vsb=0.0,
+      vsb=self.lut["vds"].min(),
       lch=self.lut["lch"].min(),
-      gmoverid=10.0,
+      gmoverid=self.lut["gmoverid"].mean(),
       gm=1e-3,
     )
     
@@ -340,8 +341,6 @@ class Device:
     wch_ratio = array(sizing.wch) / self.ref_width
     target_jd = array([dcop.ids]).flatten() / array([sizing.wch]).flatten() 
     
-    pprint(target_jd)
-    
     kwargs = {
       "interp_method": kwargs.get("interp_method", "pchip"),
       "interp_mode": kwargs.get("interp_mode", "default"),
@@ -356,7 +355,6 @@ class Device:
     }
     
     reference_electric_model = self.look_up(ycols, target, **kwargs)
-    print(reference_electric_model)
     
     electric_model = ElectricModel()
     for col in [col for col in electric_model.__annotations__ if col in reference_electric_model.columns]:
@@ -364,7 +362,6 @@ class Device:
       if (col.startswith('c') or col.startswith('g') ):# capacitances or conductances
         electric_model.__setattr__(col, electric_model.__getattribute__(col)*wch_ratio)
       electric_model.__setattr__(col, electric_model.__getattribute__(col).tolist())
-    print(electric_model)
     return electric_model
   
   def thermal_noise_psd(self, dcop: DcOp, sizing: Sizing, **kwargs):
@@ -400,8 +397,198 @@ class Device:
       return None
     
     return DataFrame({xcol: xcol_arr,ycol: ycol_arr}).sort_values(by=xcol)
-  
 
+class Moscap(Device):
+  def __init__(
+    self, 
+    lut_path: DeviceLutPath, 
+    bsim4params_path: Optional[DeviceLutPath] = None, 
+    device_type: str = "nch", 
+    ref_width: float = 10e-6,
+    lut_varmap: Optional[dict] = None,
+    bsim4params_varmap: Optional[dict] = None,
+  ):
+    super().__init__(lut_path, bsim4params_path, device_type, ref_width, lut_varmap, bsim4params_varmap)
+  
+  def sizing(self, sizing_spec: Optional[MoscapSizingSpecification], return_dcop=False, **kwargs) -> Union[Tuple[DcOp,Sizing], Sizing]:
+    """Device sizing from DC operating point and target electric parameters
+    Forward propagaton of the flow of Gm/Id method.
+    Args:
+        dcop (DcOp): DC operating point
+
+    Returns:
+        DataFrame: Resulting device sizing and electrical parameters
+    """
+    default_sizing = MoscapSizingSpecification(
+      vgs=self.lut["vgs"].mean(),
+      vds=self.lut["vds"].min(),
+      vsb=self.lut["vds"].min(),
+      lch=self.lut["lch"].min(),
+      cgg=self.lut["cgg"].mean(),
+    )
+    
+    if sizing_spec is None:
+      sizing_spec = default_sizing
+    
+    assert all([col in self.lut.columns for col in sizing_spec.__annotations__]), "Invalid sizing_spec"
+    assert (sizing_spec.vgs is not None), "vgs is required"
+    assert (sizing_spec.vds is not None), "vds is required"
+    assert (sizing_spec.vsb is not None), "vsb is required"
+    assert (sizing_spec.lch is not None), "lch is required"
+    assert (sizing_spec.cgg is not None), "cgg is required"
+    
+    kwargs = {
+      "interp_method": kwargs.get("interp_method", "pchip"),
+      "interp_mode": kwargs.get("interp_mode", "default"),
+    }
+    ycols = ["cgg", "lch", "vgs", "vds", "vsb"]
+    target = {
+      "vgs": sizing_spec.vgs if isinstance(sizing_spec.vgs, list) else [sizing_spec.vgs],
+      "vds": sizing_spec.vds if isinstance(sizing_spec.vds, list) else [sizing_spec.vds],
+      "vsb": sizing_spec.vsb if isinstance(sizing_spec.vsb, list) else [sizing_spec.vsb],
+      "lch": sizing_spec.lch if isinstance(sizing_spec.lch, list) else [sizing_spec.lch], # I included channel length to replace instrinsic gain spec. Using Av would require early voltage Va to also be extracted.
+    }
+    closest_target = self.look_up(ycols, target, return_xy=True, **kwargs)
+    sizing = Sizing(lch=closest_target["lch"].values.tolist())
+    dcop = DcOp(
+      vgs=closest_target["vgs"].values.tolist(), 
+      vds=closest_target["vds"].values.tolist(),
+      vsb=closest_target["vsb"].values.tolist()
+    )
+    sizing.wch = (self.ref_width*array(sizing_spec.cgg) / closest_target["cgg"].values).tolist()
+    return (dcop, sizing) if return_dcop else sizing
+
+  def electric_model(self, dcop: DcOp, sizing: Sizing, **kwargs) -> ElectricModel:
+    """Electric model from from device sizing and DC Operating point
+    Backwards propagaton of the flow of Gm/Id method.
+    Args:
+        sizing (Dict): Device sizing
+        dcop (DcOp): DC operating point containing voltages and currents
+
+    Returns:
+        Dict: Electrical model parameters
+    """
+    
+    kwargs = {
+      "interp_method": kwargs.get("interp_method", "pchip"),
+      "interp_mode": kwargs.get("interp_mode", "default"),
+    }
+    ycols = ["cgg", "cgs", "cgd", "cdb", "csb"]
+    target = {
+      "vgs": dcop.vgs if isinstance(dcop.vgs, list) else [dcop.vgs],
+      "vds": dcop.vds if isinstance(dcop.vds, list) else [dcop.vds],
+      "vsb": dcop.vsb if isinstance(dcop.vsb, list) else [dcop.vsb],
+      "lch": sizing.lch if isinstance(sizing.lch, list) else [sizing.lch],
+    }
+    
+    wch_ratio = array(sizing.wch) / self.ref_width
+    
+    reference_electric_model = self.look_up(ycols, target, **kwargs)
+    
+    electric_model = ElectricModel()
+    for col in [col for col in electric_model.__annotations__ if col in reference_electric_model.columns]:
+      electric_model.__setattr__(col, reference_electric_model[col].values)
+      if (col.startswith('c') ):
+        electric_model.__setattr__(col, electric_model.__getattribute__(col)*wch_ratio)
+      electric_model.__setattr__(col, electric_model.__getattribute__(col).tolist())
+    return electric_model
+
+class Switch(Device):
+  def __init__(
+    self, 
+    lut_path: DeviceLutPath, 
+    bsim4params_path: Optional[DeviceLutPath] = None, 
+    device_type: str = "nch", 
+    ref_width: float = 10e-6,
+    lut_varmap: Optional[dict] = None,
+    bsim4params_varmap: Optional[dict] = None,
+  ):
+    super().__init__(lut_path, bsim4params_path, device_type, ref_width, lut_varmap, bsim4params_varmap)
+  
+  def sizing(self, sizing_spec: Optional[SwitchSizingSpecification], return_dcop=False, **kwargs) -> Union[Tuple[DcOp,Sizing], Sizing]:
+    """Device sizing from DC operating point and target electric parameters
+    Forward propagaton of the flow of Gm/Id method.
+    Args:
+        dcop (DcOp): DC operating point
+
+    Returns:
+        DataFrame: Resulting device sizing and electrical parameters
+    """
+    default_sizing = SwitchSizingSpecification(
+      vgs=self.lut["vgs"].max(),
+      vds=self.lut["vds"].min(),
+      vsb=self.lut["vds"].mean(),
+      lch=self.lut["lch"].min(),
+      ron=self.lut["ron"].min(),
+    )
+    
+    if sizing_spec is None:
+      sizing_spec = default_sizing
+    
+    assert all([col in self.lut.columns for col in sizing_spec.__annotations__]), "Invalid sizing_spec"
+    assert (sizing_spec.vgs is not None), "vgs is required"
+    assert (sizing_spec.vds is not None), "vds is required"
+    assert (sizing_spec.vsb is not None), "vsb is required"
+    assert (sizing_spec.lch is not None), "lch is required"
+    assert (sizing_spec.ron is not None), "ron is required"
+    
+    kwargs = {
+      "interp_method": kwargs.get("interp_method", "pchip"),
+      "interp_mode": kwargs.get("interp_mode", "default"),
+    }
+    ycols = ["ron", "lch", "vgs", "vds", "vsb"]
+    target = {
+      "vgs": sizing_spec.vgs if isinstance(sizing_spec.vgs, list) else [sizing_spec.vgs],
+      "vds": sizing_spec.vds if isinstance(sizing_spec.vds, list) else [sizing_spec.vds],
+      "vsb": sizing_spec.vsb if isinstance(sizing_spec.vsb, list) else [sizing_spec.vsb],
+      "lch": sizing_spec.lch if isinstance(sizing_spec.lch, list) else [sizing_spec.lch], # I included channel length to replace instrinsic gain spec. Using Av would require early voltage Va to also be extracted.
+    }
+    closest_target = self.look_up(ycols, target, return_xy=True, **kwargs)
+    sizing = Sizing(lch=closest_target["lch"].values.tolist())
+    dcop = DcOp(
+      vgs=closest_target["vgs"].values.tolist(), 
+      vds=closest_target["vds"].values.tolist(),
+      vsb=closest_target["vsb"].values.tolist()
+    )
+    sizing.wch = (self.ref_width*closest_target["ron"].values / array(sizing_spec.ron) ).tolist()
+    return (dcop, sizing) if return_dcop else sizing
+  
+  def electric_model(self, dcop: DcOp, sizing: Sizing, **kwargs) -> ElectricModel:
+    """Electric model from from device sizing and DC Operating point
+    Backwards propagaton of the flow of Gm/Id method.
+    Args:
+        sizing (Dict): Device sizing
+        dcop (DcOp): DC operating point containing voltages and currents
+
+    Returns:
+        Dict: Electrical model parameters
+    """
+    
+    kwargs = {
+      "interp_method": kwargs.get("interp_method", "pchip"),
+      "interp_mode": kwargs.get("interp_mode", "default"),
+    }
+    ycols = ["ron", "cgs", "cgd", "cdb", "csb"]
+    target = {
+      "vgs": dcop.vgs if isinstance(dcop.vgs, list) else [dcop.vgs],
+      "vds": dcop.vds if isinstance(dcop.vds, list) else [dcop.vds],
+      "vsb": dcop.vsb if isinstance(dcop.vsb, list) else [dcop.vsb],
+      "lch": sizing.lch if isinstance(sizing.lch, list) else [sizing.lch],
+    }
+    
+    wch_ratio = self.ref_width/array(sizing.wch)
+    
+    reference_electric_model = self.look_up(ycols, target, **kwargs)
+    
+    electric_model = ElectricModel()
+    for col in [col for col in electric_model.__annotations__ if col in reference_electric_model.columns]:
+      electric_model.__setattr__(col, reference_electric_model[col].values)
+      if ( col.startswith('c') ):# capacitances or resistance
+        electric_model.__setattr__(col, electric_model.__getattribute__(col)/wch_ratio)
+      if ( col.startswith('r') ):# capacitances or resistance
+        electric_model.__setattr__(col, electric_model.__getattribute__(col)*wch_ratio)
+      electric_model.__setattr__(col, electric_model.__getattribute__(col).tolist())
+    return electric_model
 # Examples
 
 def test_device(lut_varmap):

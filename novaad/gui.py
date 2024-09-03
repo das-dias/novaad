@@ -18,7 +18,6 @@ class GuiApp:
     title = kwargs.get('title', 'Device Results Table')
     table_fig = make_subplots(
       rows=3, cols=1, 
-      title_text=title,
       subplot_titles=(
         "DC-OP",
         "Sizing",
@@ -30,6 +29,7 @@ class GuiApp:
              [{"type": "table"}],
             ]
     )
+    
     dcop_df = DataFrame(data={
       "ID": results['id'],
       "Type": results['type'],
@@ -49,18 +49,19 @@ class GuiApp:
     electric_model_df = DataFrame(data={
       "ID": results['id'],
       "Type": results['type'],
-      "Gm/Id [1/V]": results['gmoverid'].apply(lambda x: f"{x:.4f}"),
-      "Gm [uS]": results['gm'].apply(lambda x: f"{x/1e-6:.4f}"),
-      "Gds [uS]": results['gds'].apply(lambda x: f"{x/1e-6:.4f}"),
+      "Gm/Id [1/V]": results['gmoverid'].apply(lambda x: f"{x:.4f}" if x is not None else "N/A"),
+      "Gm [uS]": results['gm'].apply(lambda x: f"{x/1e-6:.4f}" if x is not None else "N/A"),
+      "Gds [uS]": results['gds'].apply(lambda x: f"{x/1e-6:.4f}" if x is not None else "N/A"),
       "Cgg [fF]": results['cgg'].apply(lambda x: f"{x/1e-15:.4f}" if x is not None else "N/A"),
       "Cgs [fF]": results['cgs'].apply(lambda x: f"{x/1e-15:.4f}" if x is not None else "N/A"),
       "Cgd [fF]": results['cgd'].apply(lambda x: f"{x/1e-15:.4f}" if x is not None else "N/A"),
       "Csb [fF]": results['csb'].apply(lambda x: f"{x/1e-15:.4f}" if x is not None else "N/A"),
       "Cdb [fF]": results['cdb'].apply(lambda x: f"{x/1e-15:.4f}" if x is not None else "N/A"),
+      "Ron [Ω]": results['ron'].apply(lambda x: f"{x:.2f}" if x is not None else "N/A"),
       "Av [dB]": results['av'].apply(lambda x: f"{20*log10(x):.4f}" if x is not None else "N/A"),
-      "Ft [MHz]": results['ft'].apply(lambda x: f"{x/1e6:.4e}" if x is not None else "N/A"),
-      "FoM Av*Ft [MHz]": results['fom_bw'].apply(lambda x: f"{x/1e6:.4e}" if x is not None else "N/A"),
-      "FoM (Gm/Id)*Ft [Hz/V]": results['fom_nbw'].apply(lambda x: f"{x:.4e}" if x is not None else "N/A"),
+      "Ft [GHz]": results['ft'].apply(lambda x: f"{x/1e9:.4f}" if x is not None else "N/A"),
+      "FoM Av*Ft [GHz]": results['fom_bw'].apply(lambda x: f"{x/1e9:.2f}" if x is not None else "N/A"),
+      "FoM (Gm/Id)*Ft [GHz/V]": results['fom_nbw'].apply(lambda x: f"{x/1e9:.4f}" if x is not None else "N/A"),
     })
     
     
@@ -82,6 +83,12 @@ class GuiApp:
         cells=dict(values=[electric_model_df[k].tolist() for k in electric_model_df.columns])
       ), row=3, col=1
     )
+    
+    table_fig.update_layout(
+      title=title,
+      font=dict(family="Arial, sans-serif", size=14, color="black"),
+    )
+    
     table_fig.show()
     
   def show_device_graphs(self, args, **kwargs):
@@ -121,29 +128,15 @@ class GuiApp:
       warn(f"Invalid Vsb value: {vsb}. Using nearest value.")
       vsb = self.device.lut['vsb'][(self.device.lut['vsb']-vsb).abs().argsort()[0]]
      
-    fig = make_subplots(
-      rows=3, cols=2, 
-      subplot_titles=(
-        "Gm/Id vs Vgs",
-        "Gm/Id vs Jd",
-        "Ft vs Jd",
-        "Av vs Gm/Id",
-        "Fom Av*Bw vs Jd",
-        "Fom Noise*Bw vs Jd",
-        "Cgg, vs Vgs",
-        "Ron vs Vgs",
-      )
-    )
-     
     layout = go.Layout(
-      title=f"Gm/Id Method @ Vds={vds:.2f}V Vsb={vsb:.2f}V {device_type.upper()}",
-      font=dict(family="Arial, sans-serif", size=14, color="black")
+      title=f"Gm/Id Method @ Vds={vds:.2f}V Vsb={vsb:.2f}V ({device_type.upper()})",
+      font=dict(family="Arial, sans-serif", size=14, color="black"),
+      height=1200,
     )    
     plot_df = DataFrame(
       columns=['vgs', 'gmoverid', 'jd', 
               'ft', 'av', 'ft*av', 'ft*gmoverid', 'cgg', 'cgs', 'cgd', 'ron', 'lch']
     )
-    print(plot_df)
      
     for l in target_lch:
       if verbose > 0:
@@ -194,9 +187,14 @@ class GuiApp:
         "Gm/Id vs Jd",
         "Ft vs Jd",
         "Av vs Gm/Id",
-        "FoM Gain-Bandwidth vs Jd",
-        "FoM Noise-Bandwidth vs Jd"
-      )
+        "Fom Av*Bw vs Jd",
+        "Fom Noise*Bw vs Jd",
+        "Cgg, vs Vgs",
+        "Cgs vs Vgs",
+        "Cgd vs Vgs",
+        "Ron vs Vgs",
+      ),
+      vertical_spacing=0.1
     )
     colors = [
       '#000000',

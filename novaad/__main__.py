@@ -48,7 +48,11 @@ from toml import load as toml_load
 from numpy import log10, array
 from pandas import DataFrame, concat
 
-from novaad import Device, DeviceSizingSpecification, MoscapSizingSpecification, SwitchSizingSpecification, DcOp, Sizing, GuiApp, ElectricModel, BaseEnum, DeviceType
+from novaad import (
+  Device, Moscap, Switch, DeviceSizingSpecification, 
+  MoscapSizingSpecification, SwitchSizingSpecification, 
+  DcOp, Sizing, GuiApp, ElectricModel, BaseEnum, DeviceType
+)
 
 import pdb
 
@@ -158,10 +162,8 @@ def get_device_instance_results(
     )
   for id in spec_input:
     spec = spec_input[id]
-    pprint(spec)
-    device_type = spec.device_type
     if spec.device_type.value not in devices:
-      warn(f'No configuration found for {spec.device_type}.')
+      warn(f'No configuration found for {spec.device_type.value}.')
       continue
     device = devices[spec.device_type.value]
     sizing = spec.sizing
@@ -202,7 +204,8 @@ def get_device_instance_results(
     max_gmid = device.lut['gmoverid'].max()
     if any(current_gmid > max_gmid):
       warn(f'Gm/Id ratio {current_gmid} for {id} is higher than the maximum value in the LUT {[max_gmid]}. Consider decreasing target Gm/Id or Vgs.')
-
+  # fill missing values
+  result['ron'] = None
   return result
 
 def parse_toml_moscap_input(input_file: Union[str, Path]) -> dict[str, SpecInput]:
@@ -224,10 +227,9 @@ def parse_toml_moscap_input(input_file: Union[str, Path]) -> dict[str, SpecInput
       device_data = data[device_id]
       specs[device_id] = SpecInput(
         id=device_id,
-        objective=InstanceObjective.SIZING if 'wch' in device_data else InstanceObjective.CHARACTERIZATION,
-        device_type=DeviceType(device_data['device_type']),
+        objective=InstanceObjective.SIZING if 'wch' not in device_data else InstanceObjective.CHARACTERIZATION,
+        device_type=DeviceType(device_data['type']),
         sizing_spec=MoscapSizingSpecification(
-          vds=[device_data['vds']],
           vsb=[device_data['vsb']],
           vgs=[device_data['vgs']],
           lch=[device_data['lch']],
@@ -248,18 +250,65 @@ def get_moscap_instance_results(
   result = DataFrame(columns=[
     'id', 'type', 'objective', 'vgs', 
     'vds', 'vsb', 'wch', 
-    'lch', 'cgs', 'cgd', 'cgg'
+    'lch', 'cgs', 'cgd', 'cgg', 'cdb', 'csb'
   ])
   
   devices = {}
-  device_types = [dt for dt in ['nch', 'pch'] if dt in config]
+  device_types = [dt for dt in ['nch', 'pch'] if dt in config and 'lut-path' in config[dt]]
+  
   for device_type in device_types:
-    devices[device_type] = MoscapDevice(
-      lut_path=config[device_type], 
-      lut_varmap=config[device_type]['varmap'],
-      device_type=DeviceType(device_type)
+    lut_varmap = config[device_type]['varmap']
+    devices[device_type] = Moscap(
+      lut_path=config[device_type]['lut-path'], 
+      lut_varmap={v:k for k,v in lut_varmap.items()},
+      device_type=DeviceType(device_type),
+      ref_width=float(config[device_type]['ref-width']),
     )
-  raise NotImplementedError("App not implemented.")
+  
+  for id in spec_input:
+    spec = spec_input[id]
+    if spec.device_type.value not in devices:
+      warn(f'No configuration found for {spec.device_type.value}.')
+      continue
+    device = devices[spec.device_type.value]
+    sizing = spec.sizing
+    spec.sizing_spec.vds = [device.lut['vds'].min()]
+    dcop = DcOp(
+      vds=[device.lut['vds'].min()],
+      vsb=spec.sizing_spec.vsb,
+      vgs=spec.sizing_spec.vgs,
+    )
+    if spec.objective == InstanceObjective.SIZING:
+      dcop, sizing = device.sizing(spec.sizing_spec, return_dcop=True)
+    electric_model: ElectricModel = device.electric_model(dcop, sizing)
+    result = concat([result, DataFrame(data={
+      'id': id,
+      'type': spec.device_type.value,
+      'objective': spec.objective.value,
+      'vgs': dcop.vgs,
+      'vds': dcop.vds,
+      'vsb': dcop.vsb,
+      'wch': sizing.wch,
+      'lch': sizing.lch,
+      'cgs': electric_model.cgs,
+      'cgd': electric_model.cgd,
+      'cgg': electric_model.cgg,
+      'cdb': electric_model.cdb,
+      'csb': electric_model.csb,
+    })])
+  
+  # fill missing values
+  result['ids'] = None
+  result['gm'] = None
+  result['gds'] = None
+  result['av'] = None
+  result['ft'] = None
+  result['fom_bw'] = None
+  result['fom_nbw'] = None
+  result['gmoverid'] = None
+  result['ron'] = None
+  
+  return result
 
 def parse_toml_switch_input(input_file: Union[str, Path]) -> dict[str, SpecInput]:
   """ Parse input file in TOML format into a DeviceSizingSpecification object.
@@ -280,8 +329,8 @@ def parse_toml_switch_input(input_file: Union[str, Path]) -> dict[str, SpecInput
       device_data = data[device_id]
       specs[device_id] = SpecInput(
         id=device_id,
-        objective=InstanceObjective.SIZING if 'wch' in device_data else InstanceObjective.CHARACTERIZATION,
-        device_type=DeviceType(device_data['device_type']),
+        objective=InstanceObjective.SIZING if 'wch' not in device_data else InstanceObjective.CHARACTERIZATION,
+        device_type=DeviceType(device_data['type']),
         sizing_spec=SwitchSizingSpecification(
           vsb=[device_data['vsb']],
           vgs=[device_data['vgs']],
@@ -302,31 +351,77 @@ def get_switch_instance_results(
   """ Get each instance DCOP, Sizing and Electrical Parameters. """
   result = DataFrame(columns=[
     'id', 'type', 'objective', 'vgs', 
-    'vsb', 'wch', 'lch', 'ron'
+    'vsb', 'wch', 'lch', 'ron', 'csb', 'cdb', 'cgs', 'cgd'
   ])
   
   devices = {}
-  device_types = [dt for dt in ['nch', 'pch'] if dt in config]
+  device_types = [dt for dt in ['nch', 'pch'] if dt in config and 'lut-path' in config[dt]]
   for device_type in device_types:
-    devices[device_type] = SwitchDevice(
-      lut_path=config[device_type], 
-      lut_varmap=config[device_type]['varmap'],
-      device_type=DeviceType(device_type)
+    lut_varmap = config[device_type]['varmap']
+    devices[device_type] = Switch(
+      lut_path=config[device_type]['lut-path'], 
+      lut_varmap={v:k for k,v in lut_varmap.items()},
+      device_type=DeviceType(device_type),
+      ref_width=float(config[device_type]['ref-width']),
     )
-  raise NotImplementedError("App not implemented.")
+  
+  for id in spec_input:
+    spec = spec_input[id]
+    if spec.device_type.value not in devices:
+      warn(f'No configuration found for {spec.device_type}.')
+      continue
+    device = devices[spec.device_type.value]
+    sizing = spec.sizing
+    spec.sizing_spec.vds = [device.lut['vds'].min()]
+    dcop = DcOp(
+      vsb=spec.sizing_spec.vsb,
+      vgs=spec.sizing_spec.vgs,
+      vds=[device.lut['vds'].min()]
+    )
+    if spec.objective == InstanceObjective.SIZING:
+      dcop, sizing = device.sizing(spec.sizing_spec, return_dcop=True)
+    electric_model: ElectricModel = device.electric_model(dcop, sizing)
+    result = concat([result, DataFrame(data={
+      'id': id,
+      'type': spec.device_type.value,
+      'objective': spec.objective.value,
+      'vgs': dcop.vgs,
+      'vds': dcop.vds,
+      'vsb': dcop.vsb,
+      'wch': sizing.wch,
+      'lch': sizing.lch,
+      'ron': electric_model.ron,
+      'cgs': electric_model.cgs,
+      'cgd': electric_model.cgd,
+      'cdb': electric_model.cdb,
+      'csb': electric_model.csb,
+    })])
+  
+  # fill missing values
+  result['ids'] = None
+  result['gm'] = None
+  result['gds'] = None
+  result['av'] = None
+  result['ft'] = None
+  result['fom_bw'] = None
+  result['fom_nbw'] = None
+  result['gmoverid'] = None
+  result['cgg'] = None
+  
+  return result
 
 def format_results_dataframe(results: DataFrame, instance_config:InstanceConfig) -> DataFrame:
   """ Format results DataFrame to human-readable format. """
-  
+
   formatted_results = DataFrame(data={
     "Type": results['type'],
     "ID": results['id'],
     "Vgs [V]": results['vgs'].apply(lambda x: f"{x:.2f}"),
     "Vds [V]": results['vds'].apply(lambda x: f"{x:.2f}"),
     "Vsb [V]": results['vsb'].apply(lambda x: f"{x:.2f}"),
-    "Wch [um]": results['wch'].apply(lambda x: f"{x/1e-6:.4f}"),
-    "Lch [um]": results['lch'].apply(lambda x: f"{x/1e-6:.4f}"),
-    "Cgg [fF]": results['cgg'].apply(lambda x: f"{x/1e-15:.4f}"),
+    "Wch [um]": results['wch'].apply(lambda x: f"{x/1e-6:.4f}" ),
+    "Lch [um]": results['lch'].apply(lambda x: f"{x/1e-6:.4f}" ),
+    "Cgg [fF]": results['cgg'].apply(lambda x: f"{x/1e-15:.4f}" if x is not None else None),
     "Cdb [fF]": results['cdb'].apply(lambda x: f"{x/1e-15:.4f}" if x is not None else None),
     "Cgs [fF]": results['cgs'].apply(lambda x: f"{x/1e-15:.4f}" if x is not None else None),
     "Cgd [fF]": results['cgd'].apply(lambda x: f"{x/1e-15:.4f}" if x is not None else None),
@@ -347,7 +442,7 @@ def format_results_dataframe(results: DataFrame, instance_config:InstanceConfig)
     formatted_results["FOM NBW [GHz/V]"] = results['fom_nbw'].apply(lambda x: f"{x/1e9:.4f}")
   if instance_config is InstanceConfig.SWITCH:
     if 'ron' in results.columns:
-      formatted_results["Ron [Ohm]"] = results['ron'].apply(lambda x: f"{x:.4f}" if x is not None else None)
+      formatted_results["Ron [Ω]"] = results['ron'].apply(lambda x: f"{x:.4f}" if x is not None else None)
   return formatted_results
 
 def app(args: dict, cfg: dict):
@@ -368,30 +463,36 @@ def app(args: dict, cfg: dict):
     if args['--output']:
       formatted_results.to_csv(args['--output'])
     else:
+      print()
+      print('Device Sizing Results:')
       print(formatted_results)
     return True
   elif args['moscap']:
     specs = parse_toml_moscap_input(args['--input'])
     results = get_moscap_instance_results(cfg, specs)
-    formatted_results = format_results_dataframe(results, InstanceConfig.DEVICE)
+    formatted_results = format_results_dataframe(results, InstanceConfig.MOSCAP)
     if args['--gui']:
       gui = GuiApp(cfg)
       gui.show_results_table(results, title='Moscap Sizing Results Table')
     if args['--output']:
       formatted_results.to_csv(args['--output'])
     else:
+      print()
+      print('Moscap Sizing Results:')
       print(formatted_results)
     return True
   elif args['switch']:
     specs = parse_toml_switch_input(args['--input'])
     results = get_switch_instance_results(cfg, specs)
-    formatted_results = format_results_dataframe(results, InstanceConfig.DEVICE)
+    formatted_results = format_results_dataframe(results, InstanceConfig.SWITCH)
     if args['--gui']:
       gui = GuiApp(cfg)
       gui.show_results_table(results, title='Switch Sizing Results Table')
     if args['--output']:
       formatted_results.to_csv(args['--output'])
     else:
+      print()
+      print('Switch Sizing Results:')
       print(formatted_results)
     return True
   
