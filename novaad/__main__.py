@@ -45,7 +45,7 @@ from pprint import pprint
 from yaml import safe_load, safe_dump
 from toml import load as toml_load
 
-from numpy import log10, array, nan
+from numpy import log10, array
 from pandas import DataFrame, concat
 
 from novaad import Device, DeviceSizingSpecification, MoscapSizingSpecification, SwitchSizingSpecification, DcOp, Sizing, GuiApp, ElectricModel, BaseEnum, DeviceType
@@ -312,6 +312,7 @@ def get_switch_instance_results(
 
 def format_results_dataframe(results: DataFrame, instance_config:InstanceConfig) -> DataFrame:
   """ Format results DataFrame to human-readable format. """
+  
   formatted_results = DataFrame(data={
     "Type": results['type'],
     "ID": results['id'],
@@ -321,13 +322,14 @@ def format_results_dataframe(results: DataFrame, instance_config:InstanceConfig)
     "Wch [um]": results['wch'].apply(lambda x: f"{x/1e-6:.4f}"),
     "Lch [um]": results['lch'].apply(lambda x: f"{x/1e-6:.4f}"),
     "Cgg [fF]": results['cgg'].apply(lambda x: f"{x/1e-15:.4f}"),
-    "Cgs [fF]": results['cgs'].apply(lambda x: f"{x/1e-15:.4f}" if 'cgs' in results.columns else nan),
-    "Cgd [fF]": results['cgd'].apply(lambda x: f"{x/1e-15:.4f}" if 'cgd' in results.columns else nan) ,
-    "Csb [fF]": results['csb'].apply(lambda x: f"{x/1e-15:.4f}" if 'csb' in results.columns else nan) ,
-    "Cdb [fF]": results['cdb'].apply(lambda x: f"{x/1e-15:.4f}" if 'cdb' in results.columns else nan) ,
+    "Cdb [fF]": results['cdb'].apply(lambda x: f"{x/1e-15:.4f}" if x is not None else None),
+    "Cgs [fF]": results['cgs'].apply(lambda x: f"{x/1e-15:.4f}" if x is not None else None),
+    "Cgd [fF]": results['cgd'].apply(lambda x: f"{x/1e-15:.4f}" if x is not None else None),
+    "Csb [fF]": results['csb'].apply(lambda x: f"{x/1e-15:.4f}" if x is not None else None),
     "Objective": results['objective'],
   })
-  
+
+    
   if instance_config is InstanceConfig.DEVICE:
     formatted_results["Ids [uA]"] = results['ids'].apply(lambda x: f"{x/1e-6:.4e}")
     formatted_results["Gm/Id"] = results['gmoverid'].apply(lambda x: f"{x:.4f}")
