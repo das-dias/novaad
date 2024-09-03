@@ -12,7 +12,7 @@
 
 nch: 
   lut-path: /Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_nch_lut.csv
-  ref-width: 3e-6 # reference channel width
+  ref-width: 10e-6 # reference channel width
   # match left-hand side to lut csv header (right-hand side) - no need to change
   varmap:
     vgs: vgs_n
@@ -61,7 +61,7 @@ nch:
 
 pch:
   bsim4-params-path: /Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_pch_bsim4_params.csv
-  ref-width: 3e-6 # reference channel width
+  ref-width: 10e-6 # reference channel width
   bsim4-params-varmap:
     c0: C0_p
     u0: U0_p

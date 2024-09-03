@@ -301,7 +301,7 @@ class Device:
       "interp_method": kwargs.get("interp_method", "pchip"),
       "interp_mode": kwargs.get("interp_mode", "default"),
     }
-    ycols = ["jd", "lch"]
+    ycols = ["jd", "lch", "vgs", "vds", "vsb", "gmoverid"]
     target = {
       "vgs": sizing_spec.vgs if isinstance(sizing_spec.vgs, list) else [sizing_spec.vgs],
       "vds": sizing_spec.vds if isinstance(sizing_spec.vds, list) else [sizing_spec.vds],
@@ -312,14 +312,15 @@ class Device:
     closest_target = self.look_up(ycols, target, return_xy=True, **kwargs)
     sizing = Sizing(lch=closest_target["lch"].values.tolist())
     dcop = DcOp(
-      vgs=sizing_spec.vgs, 
-      vds=sizing_spec.vds, 
-      vsb=sizing_spec.vsb
+      vgs=closest_target["vgs"].values.tolist(), 
+      vds=closest_target["vds"].values.tolist(),
+      vsb=closest_target["vsb"].values.tolist()
     )
     if sizing_spec.gm is None:
       dcop.ids = sizing_spec.ids
       sizing.wch = (array(sizing_spec.ids) / closest_target["jd"].values).tolist()
     else:
+      
       dcop.ids = (array(sizing_spec.gm) / closest_target["gmoverid"].values).tolist()
       sizing.wch = (array(dcop.ids) / closest_target["jd"].values).tolist()
     
@@ -338,6 +339,9 @@ class Device:
     
     wch_ratio = array(sizing.wch) / self.ref_width
     target_jd = array([dcop.ids]).flatten() / array([sizing.wch]).flatten() 
+    
+    pprint(target_jd)
+    
     kwargs = {
       "interp_method": kwargs.get("interp_method", "pchip"),
       "interp_mode": kwargs.get("interp_mode", "default"),
@@ -352,12 +356,15 @@ class Device:
     }
     
     reference_electric_model = self.look_up(ycols, target, **kwargs)
+    print(reference_electric_model)
+    
     electric_model = ElectricModel()
     for col in [col for col in electric_model.__annotations__ if col in reference_electric_model.columns]:
       electric_model.__setattr__(col, reference_electric_model[col].values)
       if (col.startswith('c') or col.startswith('g') ):# capacitances or conductances
         electric_model.__setattr__(col, electric_model.__getattribute__(col)*wch_ratio)
       electric_model.__setattr__(col, electric_model.__getattribute__(col).tolist())
+    print(electric_model)
     return electric_model
   
   def thermal_noise_psd(self, dcop: DcOp, sizing: Sizing, **kwargs):

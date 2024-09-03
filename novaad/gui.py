@@ -14,19 +14,19 @@ class GuiApp:
   def __init__(self, config: dict, **kwargs):
     self.config = config
   
-  def show_moscap_results_table(self, args, results:DataFrame, **kwargs):
+  def show_moscap_results_table(self, results: DataFrame, **kwargs):
     raise NotImplementedError("Moscap visualization not implemented.")
   
-  def show_moscap_graphs(self, args, results: DataFrame, **kwargs):
+  def show_moscap_graphs(self, args, **kwargs):
     raise NotImplementedError("Moscap visualization not implemented.")
   
-  def show_switch_results_table(self, args, dcop_df: DataFrame, sizing_df: DataFrame, electric_model_df: DataFrame, **kwargs):
+  def show_switch_results_table(self, results: DataFrame, **kwargs):
     raise NotImplementedError("Switch visualization not implemented.")
   
-  def show_switch_graphs(self, args, dcop_df: DataFrame, sizing_df: DataFrame, electric_model_df: DataFrame, **kwargs):
+  def show_switch_graphs(self, args, **kwargs):
     raise NotImplementedError("Switch visualization not implemented.")
   
-  def show_device_results_table(self, args, results: DataFrame, **kwargs):
+  def show_device_results_table(self, results: DataFrame, **kwargs):
     table_fig = make_subplots(
       rows=3, cols=1, 
       subplot_titles=(
@@ -41,27 +41,33 @@ class GuiApp:
             ]
     )
     dcop_df = DataFrame(data={
+      "ID": results['id'],
+      "Type": results['type'],
       "Vgs [V]": results['vgs'].apply(lambda x: f"{x:.2f}"),
       "Vds [V]": results['vds'].apply(lambda x: f"{x:.2f}"),
       "Vsb [V]": results['vsb'].apply(lambda x: f"{x:.2f}"),
-      "Ids [uA]": results['ids'].apply(lambda x: f"{x/1e-6:.4e}"),
+      "Ids [uA]": results['ids'].apply(lambda x: f"{x/1e-6:.4f}"),
     })
     
     sizing_df = DataFrame(data={
-      "Wch [um]": results['wch'].apply(lambda x: f"{x/1e-6:.4e}"),
-      "Lch [nm]": results['lch'].apply(lambda x: f"{x/1e-9:.4e}"),
+      "ID": results['id'],
+      "Type": results['type'],
+      "Wch [um]": results['wch'].apply(lambda x: f"{x/1e-6:.4f}"),
+      "Lch [nm]": results['lch'].apply(lambda x: f"{x/1e-9:.4f}"),
     })
     
     electric_model_df = DataFrame(data={
-      "Gm/Id [1/V]": results['gmoverid'].apply(lambda x: f"{x:.4e}"),
-      "Gm [uS]": results['gm'].apply(lambda x: f"{x/1e-6:.4e}"),
-      "Gds [uS]": results['gds'].apply(lambda x: f"{x/1e-6:.4e}"),
-      "Cgg [fF]": results['cgg'].apply(lambda x: f"{x/1e-15:.4e}"),
-      "Cgs [fF]": results['cgs'].apply(lambda x: f"{x/1e-15:.4e}"),
-      "Cgd [fF]": results['cgd'].apply(lambda x: f"{x/1e-15:.4e}"),
-      "Csb [fF]": results['csb'].apply(lambda x: f"{x/1e-15:.4e}"),
-      "Cdb [fF]": results['cdb'].apply(lambda x: f"{x/1e-15:.4e}"),
-      "Av [dB]": results['av'].apply(lambda x: f"{20*log10(x):.4}"),
+      "ID": results['id'],
+      "Type": results['type'],
+      "Gm/Id [1/V]": results['gmoverid'].apply(lambda x: f"{x:.4f}"),
+      "Gm [uS]": results['gm'].apply(lambda x: f"{x/1e-6:.4f}"),
+      "Gds [uS]": results['gds'].apply(lambda x: f"{x/1e-6:.4f}"),
+      "Cgg [fF]": results['cgg'].apply(lambda x: f"{x/1e-15:.4f}" if x is not None else "N/A"),
+      "Cgs [fF]": results['cgs'].apply(lambda x: f"{x/1e-15:.4f}" if x is not None else "N/A"),
+      "Cgd [fF]": results['cgd'].apply(lambda x: f"{x/1e-15:.4f}" if x is not None else "N/A"),
+      "Csb [fF]": results['csb'].apply(lambda x: f"{x/1e-15:.4f}" if x is not None else "N/A"),
+      "Cdb [fF]": results['cdb'].apply(lambda x: f"{x/1e-15:.4f}" if x is not None else "N/A"),
+      "Av [dB]": results['av'].apply(lambda x: f"{20*log10(x):.4f}" if x is not None else "N/A"),
       "Ft [MHz]": results['ft'].apply(lambda x: f"{x/1e6:.4e}"),
       "FoM Av*Ft [MHz]": results['fom_bw'].apply(lambda x: f"{x/1e6:.4e}"),
       "FoM (Gm/Id)*Ft [Hz/V]": results['fom_nbw'].apply(lambda x: f"{x:.4e}"),

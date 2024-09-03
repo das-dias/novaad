@@ -192,12 +192,17 @@ def get_device_instance_results(
       'cgd': electric_model.cgd,
       'csb': electric_model.csb,
       'cdb': electric_model.cdb,
-      'av': (array(electric_model.gm)/array(electric_model.gds)).tolist(),
-      'ft': (array(electric_model.gm)/(2*3.14159*array(electric_model.cgg))).tolist(),
-      'fom_bw': (array(electric_model.av)*array(electric_model.gm)/(2*3.14159*array(electric_model.cgg))).tolist(),
-      'fom_nbw': ((array(electric_model.gm)/(2*3.14159*array(electric_model.cgg)))*(array(electric_model.gm)/array(dcop.ids))).tolist(),
+      'av': electric_model.av,
+      'ft': electric_model.ft,
+      'fom_bw': (array(electric_model.av)*array(electric_model.ft)).tolist(),
+      'fom_nbw': (array(electric_model.ft)*(array(electric_model.gm)/array(dcop.ids))).tolist(),
     })])
-  
+    
+    current_gmid = result[result["id"] == id]['gmoverid'].values
+    max_gmid = device.lut['gmoverid'].max()
+    if any(current_gmid > max_gmid):
+      warn(f'Gm/Id ratio {current_gmid} for {id} is higher than the maximum value in the LUT {[max_gmid]}. Consider decreasing target Gm/Id or Vgs.')
+
   return result
 
 def parse_toml_moscap_input(input_file: Union[str, Path]) -> dict[str, SpecInput]:
