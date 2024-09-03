@@ -136,7 +136,7 @@ class GuiApp:
     )
      
     layout = go.Layout(
-      title=f"Gm/Id Method @ Vds={vds:.2f}V Vsb={vsb:.2f}V",
+      title=f"Gm/Id Method @ Vds={vds:.2f}V Vsb={vsb:.2f}V {device_type.upper()}",
       font=dict(family="Arial, sans-serif", size=14, color="black")
     )    
     plot_df = DataFrame(
