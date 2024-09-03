@@ -1,0 +1,11 @@
+(novaad-py3.11) ➜  novaad git:(master) ✗ novaad device --gui -i/Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_input.toml
+.../novaad/novaad/__main__.py:166: UserWarning: No configuration found for pch.
+  warn(f'No configuration found for {spec.device_type.value}.')
+
+Device Sizing Results:
+  Type  ID Vgs [V] Vds [V] Vsb [V] Wch [um] Lch [um]  Cgg [fF]  ...    Gm/Id    Gm [uS] Gds [uS]  Av [V/V]  Av [dB] Ft [GHz] FOM Av*Ft [GHz] FOM NBW [GHz/V]
+0  nch  m0    0.80    0.50    0.00  33.8682   0.1800  109.9022  ...  23.6611   411.4982   6.0861  143.0626  43.1105   0.9885        141.4173         23.3890
+0  nch  m2    0.80    0.50    0.00  65.8263   0.1800  314.6496  ...   9.9727  4986.3410  50.6533  107.3693  40.6176   2.5250        271.1076         25.1810
+0  nch  m3    0.80    0.50    0.00  12.0000   1.0000   68.4000  ...   8.9520   895.2000   7.6440  126.4365  42.0374   2.2800        288.2752         20.4106
+
+[3 rows x 22 columns]

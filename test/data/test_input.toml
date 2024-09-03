@@ -1,0 +1,21 @@
+[device]
+m0 = { type = "nch", vgs = 0.8, vds = 0.5, vsb = 0.0, lch = 180e-9, gmid = 23, gm = 0.4e-3 }
+m1 = { type = "pch", vgs = 0.8, vds = 1.3, vsb = 0.0, lch = 180e-9, gmid = 23, gm = 1e-3 } # No output generated for this device; there is no LUT
+m2 = { type = "nch" , vgs = 0.8, vds = 0.5, vsb = 0.0, lch = 180e-9, gmid = 10, ids = 500e-6 }
+m3 = { type = "nch" , vgs = 0.8, vds = 0.5, vsb = 0.0, lch = 1e-6, wch = 12e-6, ids = 100e-6 }
+
+# the current test lut doesn't support vsb above 0.0
+[moscap]
+m4 = { type = "nch", vgs = 0.8, vds = 0.5, vsb = 0.0, lch = 180e-9, cgg = 1.2e-15 } # vds is ignored and set to minimum in LUT table
+m5 = { type = "pch", vgs = 0.8, vds = 1.3, vsb = 0.0, lch = 180e-9, cgg = 1.2e-15 } # No output due to no LUT!
+m6 = { type = "nch", vgs = 0.8, vsb = 0.0, lch = 180e-9, cgg = 1e-14 }
+m7 = { type = "nch", vgs = 0.8, vsb = 0.0, lch = 1e-6, cgg = 1e-14 }
+m8 = { type = "nch", vgs = 0.8, vsb = 0.0, lch = 1e-6, wch = 12e-6 } # if wch is parsed, cgg is ignored
+
+[switch]
+m9 = { type = "nch", vgs = 1.8, vds = 0.5, vsb = 0.0, lch = 180e-9, ron = 10 } # vds is ignored and set to minimum in LUT table
+m10 = { type = "pch", vgs = 0.8, vds = 1.3, vsb = 0.0, lch = 180e-9, ron = 10 } # No output due to no LUT!
+m11 = { type = "nch", vgs = 0.8, vsb = 0.0, lch = 180e-9, ron = 10 }
+m12 = { type = "nch", vgs = 0.8, vsb = 0.0, lch = 180e-9, ron = 10 }
+m13 = { type = "nch", vgs = 0.8, vsb = 0.0, lch = 1e-6, ron = 10 }
+m14 = { type = "nch", vgs = 0.8, vsb = 0.0, lch = 1e-6, wch = 12e-6 } # if wch is parsed, ron is ignored

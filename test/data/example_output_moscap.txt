@@ -1,0 +1,10 @@
+(novaad-py3.11) ➜  novaad git:(master) ✗ novaad moscap --gui -i/Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_input.toml
+../novaad/novaad/__main__.py:271: UserWarning: No configuration found for pch.
+  warn(f'No configuration found for {spec.device_type.value}.')
+
+Moscap Sizing Results:
+  Type  ID Vgs [V] Vds [V] Vsb [V] Wch [um] Lch [um]  Cgg [fF] Cdb [fF] Cgs [fF] Cgd [fF] Csb [fF]         Objective
+0  nch  m4    0.80    0.10    0.00   0.5854   0.1800    1.2000   0.0240   0.3960   0.1200   0.0601            sizing
+0  nch  m6    0.80    0.10    0.00   4.8780   0.1800   10.0000   0.2000   3.3000   1.0000   0.5012            sizing
+0  nch  m7    0.80    0.10    0.00   1.1521   1.0000   10.0000   0.1999   3.3007   1.0000   0.5000            sizing
+0  nch  m8    0.80    0.10    0.00  12.0000   1.0000  104.1600   2.0820  34.3800  10.4160   5.2080  characterization

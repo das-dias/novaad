@@ -1,0 +1,11 @@
+(novaad-py3.11) ➜  novaad git:(master) ✗ novaad switch --gui -i/Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_input.toml
+.../novaad/novaad/__main__.py:371: UserWarning: No configuration found for DeviceType.PMOS.
+  warn(f'No configuration found for {spec.device_type}.')
+
+Switch Sizing Results:
+  Type   ID Vgs [V] Vds [V] Vsb [V]   Wch [um] Lch [um] Cgg [fF]  Cdb [fF]   Cgs [fF]   Cgd [fF]  Csb [fF]         Objective    Ron [Ω]
+0  nch   m9    1.80    0.10    0.00    76.4500   0.1800     None    3.2950    54.3560    16.4750    8.2566            sizing    10.0000
+0  nch  m11    0.80    0.10    0.00   418.5250   0.1800     None   17.1595   283.1322    85.7976   43.0034            sizing    10.0000
+0  nch  m12    0.80    0.10    0.00   418.5250   0.1800     None   17.1595   283.1322    85.7976   43.0034            sizing    10.0000
+0  nch  m13    0.80    0.10    0.00  1545.1750   1.0000     None  268.0879  4426.9264  1341.2119  670.6059            sizing    10.0000
+0  nch  m14    0.80    0.10    0.00    12.0000   1.0000     None    2.0820    34.3800    10.4160    5.2080  characterization  1287.6458
