@@ -14,21 +14,11 @@ class GuiApp:
   def __init__(self, config: dict, **kwargs):
     self.config = config
   
-  def show_moscap_results_table(self, results: DataFrame, **kwargs):
-    raise NotImplementedError("Moscap visualization not implemented.")
-  
-  def show_moscap_graphs(self, args, **kwargs):
-    raise NotImplementedError("Moscap visualization not implemented.")
-  
-  def show_switch_results_table(self, results: DataFrame, **kwargs):
-    raise NotImplementedError("Switch visualization not implemented.")
-  
-  def show_switch_graphs(self, args, **kwargs):
-    raise NotImplementedError("Switch visualization not implemented.")
-  
-  def show_device_results_table(self, results: DataFrame, **kwargs):
+  def show_results_table(self, results: DataFrame, **kwargs):
+    title = kwargs.get('title', 'Device Results Table')
     table_fig = make_subplots(
       rows=3, cols=1, 
+      title_text=title,
       subplot_titles=(
         "DC-OP",
         "Sizing",
@@ -46,7 +36,7 @@ class GuiApp:
       "Vgs [V]": results['vgs'].apply(lambda x: f"{x:.2f}"),
       "Vds [V]": results['vds'].apply(lambda x: f"{x:.2f}"),
       "Vsb [V]": results['vsb'].apply(lambda x: f"{x:.2f}"),
-      "Ids [uA]": results['ids'].apply(lambda x: f"{x/1e-6:.4f}"),
+      "Ids [uA]": results['ids'].apply(lambda x: f"{x/1e-6:.4f}" if x is not None else "N/A"),
     })
     
     sizing_df = DataFrame(data={
@@ -68,9 +58,9 @@ class GuiApp:
       "Csb [fF]": results['csb'].apply(lambda x: f"{x/1e-15:.4f}" if x is not None else "N/A"),
       "Cdb [fF]": results['cdb'].apply(lambda x: f"{x/1e-15:.4f}" if x is not None else "N/A"),
       "Av [dB]": results['av'].apply(lambda x: f"{20*log10(x):.4f}" if x is not None else "N/A"),
-      "Ft [MHz]": results['ft'].apply(lambda x: f"{x/1e6:.4e}"),
-      "FoM Av*Ft [MHz]": results['fom_bw'].apply(lambda x: f"{x/1e6:.4e}"),
-      "FoM (Gm/Id)*Ft [Hz/V]": results['fom_nbw'].apply(lambda x: f"{x:.4e}"),
+      "Ft [MHz]": results['ft'].apply(lambda x: f"{x/1e6:.4e}" if x is not None else "N/A"),
+      "FoM Av*Ft [MHz]": results['fom_bw'].apply(lambda x: f"{x/1e6:.4e}" if x is not None else "N/A"),
+      "FoM (Gm/Id)*Ft [Hz/V]": results['fom_nbw'].apply(lambda x: f"{x:.4e}" if x is not None else "N/A"),
     })
     
     
@@ -101,7 +91,16 @@ class GuiApp:
     
     device_type = args['--type']
     assert device_type in ['nch', 'pch'], "Invalid device type. Must be 'nch' or 'pch'."
-    self.device = Device(self.config[device_type], self.config[device_type]['varmap'], device_type, ref_width=self.config[device_type]['ref-width'])
+    lut_varmap = self.config[device_type]['varmap']
+    bsim4params_varmap = self.config[device_type]['bsim4-params-varmap']
+    self.device = Device(
+      lut_path=self.config[device_type]['lut-path'], 
+      lut_varmap={v:k for k,v in lut_varmap.items()},
+      device_type=device_type,
+      bsim4params_path=self.config[device_type]['bsim4-params-path'],
+      bsim4params_varmap={v:k for k,v in bsim4params_varmap.items()},
+      ref_width=float(self.config[device_type]['ref-width']),
+    )
     
     target_lch = [float(l) for l in args['LCH_PLOT']] if args['--lch-plot'] else ['all']
     if target_lch[0] == 'all':
@@ -111,8 +110,9 @@ class GuiApp:
       Interpolated values are not supported for Graph visualization. \
         Please use a valid channel length: {self.device.lut['lch'].unique()}"
     
-    vds = float(args['--vds'])
-    vsb = float(args['--vsb'])
+    
+    vds = float(args['--vds']) if args['--vds'] else self.device.lut['vds'].mean()
+    vsb = float(args['--vsb']) if args['--vsb'] else self.device.lut['vsb'].min()
     
     if vds not in self.device.lut['vds'].unique():
       warn(f"Invalid Vds value: {vds}. Using nearest value.")
@@ -129,7 +129,9 @@ class GuiApp:
         "Ft vs Jd",
         "Av vs Gm/Id",
         "Fom Av*Bw vs Jd",
-        "Fom Noise*Bw vs Jd"
+        "Fom Noise*Bw vs Jd",
+        "Cgg, vs Vgs",
+        "Ron vs Vgs",
       )
     )
      
@@ -139,8 +141,9 @@ class GuiApp:
     )    
     plot_df = DataFrame(
       columns=['vgs', 'gmoverid', 'jd', 
-              'ft', 'av', 'ft*av', 'ft*gmoverid', 'lch']
+              'ft', 'av', 'ft*av', 'ft*gmoverid', 'cgg', 'cgs', 'cgd', 'ron', 'lch']
     )
+    print(plot_df)
      
     for l in target_lch:
       if verbose > 0:
@@ -155,202 +158,164 @@ class GuiApp:
       av_vs_gm_id = self.device.wave_vs_wave("av", "gmoverid", query=query)
       fom_av_bw_vs_jd = self.device.wave_vs_wave("ft*av", "jd", query=query)
       fom_noise_bw_vs_jd = self.device.wave_vs_wave("ft*gmoverid", "jd", query=query)
+      cgg_vs_vgs = self.device.wave_vs_wave("cgg", "vgs", query=query)
+      cgs_vs_vgs = self.device.wave_vs_wave("cgs", "vgs", query=query)
+      cgd_vs_vgs = self.device.wave_vs_wave("cgd", "vgs", query=query)
+      ron_vs_vgs = self.device.wave_vs_wave("ron", "vgs", query=query)
       
       aux_df = gm_id_vs_vgs
-      aux_df = merge(aux_df, gm_id_vs_jd, how='outer')
-      aux_df = merge(aux_df, ft_vs_jd, how='outer')
-      aux_df = merge(aux_df, av_vs_gm_id, how='outer')
-      aux_df = merge(aux_df, fom_av_bw_vs_jd, how='outer')
-      aux_df = merge(aux_df, fom_noise_bw_vs_jd, how='outer')
+      aux_df = merge(aux_df, gm_id_vs_jd)
+      aux_df = merge(aux_df, ft_vs_jd)
+      aux_df = merge(aux_df, av_vs_gm_id)
+      aux_df = merge(aux_df, fom_av_bw_vs_jd)
+      aux_df = merge(aux_df, fom_noise_bw_vs_jd)
+      aux_df = merge(aux_df, cgg_vs_vgs)
+      aux_df = merge(aux_df, cgs_vs_vgs)
+      aux_df = merge(aux_df, cgd_vs_vgs)
+      aux_df = merge(aux_df, ron_vs_vgs)
       aux_df['lch'] = str(lch) + ' nm'
-      plot_df = concat([plot_df,aux_df])
+      
+      plot_df = concat([plot_df, aux_df])
       
       plot_df['jd_log'] = log10(plot_df['jd'])
       plot_df['av_db'] = 20*log10(plot_df['av'])
       plot_df['ft_log'] = log10(plot_df['ft'])
       plot_df['ft*av_log'] = log10(plot_df['ft*av'])
       plot_df['ft*gmoverid_log'] = log10(plot_df['ft*gmoverid'])
-      fig = make_subplots(
-        rows=3, cols=2, 
-        subplot_titles=(
-          "Gm/Id vs Vgs",
-          "Gm/Id vs Jd",
-          "Ft vs Jd",
-          "Av vs Gm/Id",
-          "FoM Gain-Bandwidth vs Jd",
-          "FoM Noise-Bandwidth vs Jd"
-        )
+      plot_df['cgg_fF'] = plot_df['cgg'] / 1e-15
+      plot_df['cgs_fF'] = plot_df['cgs'] / 1e-15
+      plot_df['cgd_fF'] = plot_df['cgd'] / 1e-15
+      plot_df['ron_log'] = log10(plot_df['ron'])
+      
+    fig = make_subplots(
+      rows=5, cols=2, 
+      subplot_titles=(
+        "Gm/Id vs Vgs",
+        "Gm/Id vs Jd",
+        "Ft vs Jd",
+        "Av vs Gm/Id",
+        "FoM Gain-Bandwidth vs Jd",
+        "FoM Noise-Bandwidth vs Jd"
       )
-      colors = [
-        '#000000',
-        '#E69F00',
-        '#56B4E9',
-        '#009E73',
-        '#F0E442',
-        '#0072B2',
-        '#0072B2',
-        '#CC79A7',
-      ] 
-      colors = colors if kwargs.get('colors', None) is None \
-        else kwargs.get('colors') \
-            if isinstance(kwargs.get('colors'), list) else None
-      assert colors is not None, "Colors must be a list."
-      colors = cycle(colors)
-      color_map = {
-        k: next(colors) for k in plot_df['lch'].unique()
-      }
-      
-      for lch in plot_df['lch'].unique():
-        lch_df = plot_df[plot_df['lch'] == lch]
-        fig.add_trace(go.Scattergl(
-          x=lch_df['vgs'], y=lch_df['gmoverid'], mode='lines', marker=dict(color=color_map[lch]), name=lch, showlegend=False), row=1, col=1)
-        fig.add_trace(go.Scattergl(
-          x=lch_df['jd_log'], y=lch_df['gmoverid'], mode='lines', marker=dict(color=color_map[lch]), name=lch, showlegend=False), row=1, col=2)
-        fig.add_trace(go.Scattergl(
-          x=lch_df['jd_log'], y=lch_df['ft_log'], mode='lines', marker=dict(color=color_map[lch]), name=lch, showlegend=False), row=2, col=1)
-        fig.add_trace(go.Scattergl(
-          x=lch_df['gmoverid'], y=lch_df['av_db'], mode='lines', marker=dict(color=color_map[lch]), name=lch, showlegend=False), row=2, col=2)
-        fig.add_trace(go.Scattergl(
-          x=lch_df['jd_log'], y=lch_df['ft*av_log'], mode='lines', marker=dict(color=color_map[lch]), name=lch, showlegend=False), row=3, col=1)
-        fig.add_trace(go.Scattergl(
-          x=lch_df['jd_log'], y=lch_df['ft*gmoverid_log'], mode='lines', marker=dict(color=color_map[lch]), name=lch, showlegend=True), row=3, col=2)
-      
-      fig.update_xaxes(title_text="Vgs [V]", row=1, col=1)
-      fig.update_yaxes(title_text="Gm/Id [1/V]", row=1, col=1)
-      
-      superscript_map = {
-      "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶",
-      "7": "⁷", "8": "⁸", "9": "⁹", "a": "ᵃ", "b": "ᵇ", "c": "ᶜ", "d": "ᵈ",
-      "e": "ᵉ", "f": "ᶠ", "g": "ᵍ", "h": "ʰ", "i": "ᶦ", "j": "ʲ", "k": "ᵏ",
-      "l": "ˡ", "m": "ᵐ", "n": "ⁿ", "o": "ᵒ", "p": "ᵖ", "q": "۹", "r": "ʳ",
-      "s": "ˢ", "t": "ᵗ", "u": "ᵘ", "v": "ᵛ", "w": "ʷ", "x": "ˣ", "y": "ʸ",
-      "z": "ᶻ", "A": "ᴬ", "B": "ᴮ", "C": "ᶜ", "D": "ᴰ", "E": "ᴱ", "F": "ᶠ",
-      "G": "ᴳ", "H": "ᴴ", "I": "ᴵ", "J": "ᴶ", "K": "ᴷ", "L": "ᴸ", "M": "ᴹ",
-      "N": "ᴺ", "O": "ᴼ", "P": "ᴾ", "Q": "Q", "R": "ᴿ", "S": "ˢ", "T": "ᵀ",
-      "U": "ᵁ", "V": "ⱽ", "W": "ᵂ", "X": "ˣ", "Y": "ʸ", "Z": "ᶻ", "+": "⁺",
-      "-": "⁻", "=": "⁼", "(": "⁽", ")": "⁾"}
-      
-      def int_to_super(n:int):
-        return "".join([superscript_map[c] for c in str(n)])
-      
-      jd_tick_vals = [val for val in set([int(v) for v in plot_df['jd_log'].to_numpy()])]
-      jd_tick_text = [f"10{int_to_super(int(val))}" for val in jd_tick_vals]
-      
-      ft_tick_vals = [val for val in set([int(v) for v in plot_df['ft_log'].to_numpy()])]
-      ft_tick_text = [f"10{int_to_super(int(val))}" for val in ft_tick_vals]
-      
-      ftav_tick_vals = [val for val in set([int(v) for v in plot_df['ft*av_log'].to_numpy()])]
-      ftav_tick_text = [f"10{int_to_super(int(val))}" for val in ftav_tick_vals]
-      
-      ftgmoverid_tick_vals = [val for val in set([int(v) for v in plot_df['ft*gmoverid_log'].to_numpy()])]
-      ftgmoverid_tick_text = [f"10{int_to_super(int(val))}" for val in ftgmoverid_tick_vals]
-      
-      fig.update_xaxes(title_text="Jd [A/m]", 
-                      tickvals=jd_tick_vals,
-                      ticktext=jd_tick_text , row=1, col=2)
-      fig.update_yaxes(title_text="Gm/Id [1/V]", row=1, col=2)
-      
-      fig.update_xaxes(title_text="Jd [A/m]", 
-                      tickvals=jd_tick_vals,
-                      ticktext=jd_tick_text, row=2, col=1)
-      fig.update_yaxes(title_text="Ft [Hz]", 
-                      tickvals=ft_tick_vals,
-                      ticktext=ft_tick_text, row=2, col=1)
-      
-      fig.update_xaxes(title_text="Gm/Id [1/V]", row=2, col=2)
-      fig.update_yaxes(title_text="Av [dB]", row=2, col=2)
-      
-      fig.update_xaxes(title_text="Jd [A/m]", 
-                      tickvals=jd_tick_vals,
-                      ticktext=jd_tick_text, row=3, col=1)
-      fig.update_yaxes(title_text="Ft*Av [Hz]", 
-                      tickvals=ftav_tick_vals,
-                      ticktext=ftav_tick_text, row=3, col=1)
-      
-      fig.update_xaxes(title_text="Jd [A/m]", 
-                      tickvals=jd_tick_vals,
-                      ticktext=jd_tick_text, row=3, col=2)
-      fig.update_yaxes(title_text="Ft*Gm/Id [Hz]", 
-                      tickvals=ftgmoverid_tick_vals,
-                      ticktext=ftgmoverid_tick_text, row=3, col=2)
-      
-      fig.update_layout(layout)
-      fig.show()
+    )
+    colors = [
+      '#000000',
+      '#E69F00',
+      '#56B4E9',
+      '#009E73',
+      '#F0E442',
+      '#0072B2',
+      '#0072B2',
+      '#CC79A7',
+    ] 
+    colors = colors if kwargs.get('colors', None) is None \
+      else kwargs.get('colors') \
+          if isinstance(kwargs.get('colors'), list) else None
+    assert colors is not None, "Colors must be a list."
+    colors = cycle(colors)
+    color_map = {
+      k: next(colors) for k in plot_df['lch'].unique()
+    }
     
-# Run the app
-if __name__ == '__main__':
-  
-  cfg = {
-    'nch': {
-      'lut-path': '/Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_nch_lut.csv',
-      'ref-width': 10e-6,
-      'varmap': {
-        'vgs': 'vgs_n',
-        'vds': 'vds_n',
-        'vsb': 'vsb_n',
-        'lch': 'length_wave',
-        'wch': 'wch_n',
-        'gmoverid': 'gmoverid_n',
-        'gm': 'gm_n',
-        'ids': 'id_n',
-        'ft': 'ft_n',
-        'av': 'av_n',
-        'jd': 'jd_n',
-        'cgs': 'cgs_n',
-        'cgd': 'cgd_n',
-        'cgb': 'cgb_n',
-        'cgg': 'cgg_n',
-        'qg': 'qg_n',
-        'qd': 'qd_n',
-        'qs': 'qs_n',
-      },
-    },
-  }
-  app = GuiApp(cfg)
-  args = {
-    '--gui': True,
-    '--vgs': '0.8',
-    '--vds': '0.3',
-    '--vsb': '0.0',
-    '--lch': '180e-9',
-    '--ids': None,
-    '--gm': '1e-3',
-    '--wch': None,
-    '--gmid': '10',
-    '--nch': True,
-    '--pch': False,
-    '--verbose': 1
-  }
-  
-  args2 = {
-    '--gui': True,
-    '--vgs': ['0.8', '0.9'],
-    '--vds': ['0.3', '0.4'],
-    '--vsb': ['0.0', '0.0'],
-    '--lch': ['180e-9', '1e-6'],
-    '--ids': None,
-    '--gm': ['1e-3', '1e-3'],
-    '--wch': None,
-    '--gmid': ['10', '10'],
-    '--nch': True,
-    '--pch': False,
-    '--verbose': 1
-  }
-  
-  args2 = {
-    '--gui': True,
-    '--vgs': ['0.8', '0.9'],
-    '--vds': ['0.3', '0.4'],
-    '--vsb': ['0.0', '0.0'],
-    '--lch': ['180e-9', '1e-6'],
-    '--ids': None,
-    '--gm': ['1e-3', '1e-3'],
-    '--wch': None,
-    '--gmid': ['10', '10'],
-    '--nch': True,
-    '--pch': False,
-    '--lch-plot': 'all',
-    '--verbose': 1
-  }
-  
-  app.run(args2, verbose=1, tol=1e-2)
+    for lch in plot_df['lch'].unique():
+      lch_df = plot_df[plot_df['lch'] == lch]
+      fig.add_trace(go.Scattergl(
+        x=lch_df['vgs'], y=lch_df['gmoverid'], mode='lines', marker=dict(color=color_map[lch]), name=lch, showlegend=False), row=1, col=1)
+      fig.add_trace(go.Scattergl(
+        x=lch_df['jd_log'], y=lch_df['gmoverid'], mode='lines', marker=dict(color=color_map[lch]), name=lch, showlegend=False), row=1, col=2)
+      fig.add_trace(go.Scattergl(
+        x=lch_df['jd_log'], y=lch_df['ft_log'], mode='lines', marker=dict(color=color_map[lch]), name=lch, showlegend=False), row=2, col=1)
+      fig.add_trace(go.Scattergl(
+        x=lch_df['gmoverid'], y=lch_df['av_db'], mode='lines', marker=dict(color=color_map[lch]), name=lch, showlegend=False), row=2, col=2)
+      fig.add_trace(go.Scattergl(
+        x=lch_df['jd_log'], y=lch_df['ft*av_log'], mode='lines', marker=dict(color=color_map[lch]), name=lch, showlegend=False), row=3, col=1)
+      fig.add_trace(go.Scattergl(
+        x=lch_df['jd_log'], y=lch_df['ft*gmoverid_log'], mode='lines', marker=dict(color=color_map[lch]), name=lch, showlegend=True), row=3, col=2)
+      fig.add_trace(go.Scattergl(
+        x=lch_df['vgs'], y=lch_df['cgg_fF'], mode='lines', marker=dict(color=color_map[lch]), name=lch, showlegend=False), row=4, col=1)
+      fig.add_trace(go.Scattergl(
+        x=lch_df['vgs'], y=lch_df['cgs_fF'], mode='lines', marker=dict(color=color_map[lch]), name=lch, showlegend=False), row=4, col=2)
+      fig.add_trace(go.Scattergl(
+        x=lch_df['vgs'], y=lch_df['cgd_fF'], mode='lines', marker=dict(color=color_map[lch]), name=lch, showlegend=False), row=5, col=1)
+      fig.add_trace(go.Scattergl(
+        x=lch_df['vgs'], y=lch_df['ron_log'], mode='lines', marker=dict(color=color_map[lch]), name=lch, showlegend=False), row=5, col=2)
+      
+    
+    superscript_map = {
+    "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶",
+    "7": "⁷", "8": "⁸", "9": "⁹", "a": "ᵃ", "b": "ᵇ", "c": "ᶜ", "d": "ᵈ",
+    "e": "ᵉ", "f": "ᶠ", "g": "ᵍ", "h": "ʰ", "i": "ᶦ", "j": "ʲ", "k": "ᵏ",
+    "l": "ˡ", "m": "ᵐ", "n": "ⁿ", "o": "ᵒ", "p": "ᵖ", "q": "۹", "r": "ʳ",
+    "s": "ˢ", "t": "ᵗ", "u": "ᵘ", "v": "ᵛ", "w": "ʷ", "x": "ˣ", "y": "ʸ",
+    "z": "ᶻ", "A": "ᴬ", "B": "ᴮ", "C": "ᶜ", "D": "ᴰ", "E": "ᴱ", "F": "ᶠ",
+    "G": "ᴳ", "H": "ᴴ", "I": "ᴵ", "J": "ᴶ", "K": "ᴷ", "L": "ᴸ", "M": "ᴹ",
+    "N": "ᴺ", "O": "ᴼ", "P": "ᴾ", "Q": "Q", "R": "ᴿ", "S": "ˢ", "T": "ᵀ",
+    "U": "ᵁ", "V": "ⱽ", "W": "ᵂ", "X": "ˣ", "Y": "ʸ", "Z": "ᶻ", "+": "⁺",
+    "-": "⁻", "=": "⁼", "(": "⁽", ")": "⁾"}
+    
+    def int_to_super(n:int):
+      return "".join([superscript_map[c] for c in str(n)])
+    
+    jd_tick_vals = [val for val in set([int(v) for v in plot_df['jd_log'].to_numpy()])]
+    jd_tick_text = [f"10{int_to_super(int(val))}" for val in jd_tick_vals]
+    
+    ft_tick_vals = [val for val in set([int(v) for v in plot_df['ft_log'].to_numpy()])]
+    ft_tick_text = [f"10{int_to_super(int(val))}" for val in ft_tick_vals]
+    
+    ftav_tick_vals = [val for val in set([int(v) for v in plot_df['ft*av_log'].to_numpy()])]
+    ftav_tick_text = [f"10{int_to_super(int(val))}" for val in ftav_tick_vals]
+    
+    ftgmoverid_tick_vals = [val for val in set([int(v) for v in plot_df['ft*gmoverid_log'].to_numpy()])]
+    ftgmoverid_tick_text = [f"10{int_to_super(int(val))}" for val in ftgmoverid_tick_vals]
+    
+    ron_tick_vals = [val for val in set([int(v) for v in plot_df['ron_log'].to_numpy()])]
+    ron_tick_text = [f"10{int_to_super(int(val))}" for val in ron_tick_vals]
+    
+    fig.update_xaxes(title_text="Vgs [V]", row=1, col=1)
+    fig.update_yaxes(title_text="Gm/Id [1/V]", row=1, col=1)
+    
+    fig.update_xaxes(title_text="Jd [A/m]", 
+                    tickvals=jd_tick_vals,
+                    ticktext=jd_tick_text , row=1, col=2)
+    fig.update_yaxes(title_text="Gm/Id [1/V]", row=1, col=2)
+    
+    fig.update_xaxes(title_text="Jd [A/m]", 
+                    tickvals=jd_tick_vals,
+                    ticktext=jd_tick_text, row=2, col=1)
+    fig.update_yaxes(title_text="Ft [Hz]", 
+                    tickvals=ft_tick_vals,
+                    ticktext=ft_tick_text, row=2, col=1)
+    
+    fig.update_xaxes(title_text="Gm/Id [1/V]", row=2, col=2)
+    fig.update_yaxes(title_text="Av [dB]", row=2, col=2)
+    
+    fig.update_xaxes(title_text="Jd [A/m]", 
+                    tickvals=jd_tick_vals,
+                    ticktext=jd_tick_text, row=3, col=1)
+    fig.update_yaxes(title_text="Ft*Av [Hz]", 
+                    tickvals=ftav_tick_vals,
+                    ticktext=ftav_tick_text, row=3, col=1)
+    
+    fig.update_xaxes(title_text="Jd [A/m]", 
+                    tickvals=jd_tick_vals,
+                    ticktext=jd_tick_text, row=3, col=2)
+    fig.update_yaxes(title_text="Ft*Gm/Id [Hz]", 
+                    tickvals=ftgmoverid_tick_vals,
+                    ticktext=ftgmoverid_tick_text, row=3, col=2)
+    
+    fig.update_xaxes(title_text="Vgs [V]", row=4, col=1)
+    fig.update_yaxes(title_text="Cgg [fF]", row=4, col=1)
+    
+    fig.update_xaxes(title_text="Vgs [V]", row=4, col=2)
+    fig.update_yaxes(title_text="Cgs [fF]", row=4, col=2)
+    
+    fig.update_xaxes(title_text="Vgs [V]", row=5, col=1)
+    fig.update_yaxes(title_text="Cgd [fF]", row=5, col=1)
+    
+    fig.update_xaxes(title_text="Vgs [V]", row=5, col=2)
+    fig.update_yaxes(title_text="Ron [Ω]",
+                    tickvals=ron_tick_vals,
+                    ticktext=ron_tick_text, row=5, col=2)
+    
+    fig.update_layout(layout)
+    fig.show()

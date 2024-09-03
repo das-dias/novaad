@@ -15,7 +15,7 @@ Examples:
 
 Usage:
   novaad (device | moscap | switch ) -i=INPUT_FILE [-o=OUTPUT_FILE] [--gui] [--verbose]
-  novaad --gui --type=TYPE --vds=VSB --vbs=VSB [--lch-plot LCH_PLOT ...]
+  novaad --gui --type=TYPE [--vds=VSB --vsb=VSB --lch-plot LCH_PLOT ...]
   novaad (-h | --help)
   novaad --version
   novaad COMMAND_FILE
@@ -28,8 +28,8 @@ Options:
   -o, --output=OUTPUT_FILE    Output file.
   COMMAND_FILE                File with commands to run.
   --gui                       Launch GUI.
-  --vds=VDS                   Drain-to-Source Voltage [default: LUT mean].
-  --vsb=VSB                   Bulk-to-Source Voltage [default: LUT min].
+  --vds=VDS                   Drain-to-Source Voltage. Default value is LUT mean.
+  --vsb=VSB                   Bulk-to-Source Voltage. Default value is LUT minimum.
   --type=TYPE                 Device Type [default: 'nch'].
   --lch-plot                  Channel lengths to include in plot [default: 'all'].
   --verbose                   Verbose Output.
@@ -347,10 +347,7 @@ def format_results_dataframe(results: DataFrame, instance_config:InstanceConfig)
     formatted_results["FOM NBW [GHz/V]"] = results['fom_nbw'].apply(lambda x: f"{x/1e9:.4f}")
   if instance_config is InstanceConfig.SWITCH:
     if 'ron' in results.columns:
-      formatted_results["Ron [Ohm]"] = results['ron'].apply(lambda x: f"{x:.4f}")
-    else: 
-      ron = 1/results['gds'].values
-      formatted_results["Ron [Ohm]"] = [f"{x:.4e}" for x in ron]
+      formatted_results["Ron [Ohm]"] = results['ron'].apply(lambda x: f"{x:.4f}" if x is not None else None)
   return formatted_results
 
 def app(args: dict, cfg: dict):
@@ -360,23 +357,47 @@ def app(args: dict, cfg: dict):
     
     print('Configuration:')
     pprint(cfg)
-  
+    
   if args['device']:
     specs = parse_toml_device_input(args['--input'])
     results = get_device_instance_results(cfg, specs)
     formatted_results = format_results_dataframe(results, InstanceConfig.DEVICE)
     if args['--gui']:
       gui = GuiApp(cfg)
-      gui.show_device_results_table(results)
+      gui.show_results_table(results, title='Device Sizing Results Table')
     if args['--output']:
       formatted_results.to_csv(args['--output'])
     else:
       print(formatted_results)
+    return True
   elif args['moscap']:
-    raise NotImplementedError("Moscap sizing not implemented.")
-  
+    specs = parse_toml_moscap_input(args['--input'])
+    results = get_moscap_instance_results(cfg, specs)
+    formatted_results = format_results_dataframe(results, InstanceConfig.DEVICE)
+    if args['--gui']:
+      gui = GuiApp(cfg)
+      gui.show_results_table(results, title='Moscap Sizing Results Table')
+    if args['--output']:
+      formatted_results.to_csv(args['--output'])
+    else:
+      print(formatted_results)
+    return True
   elif args['switch']:
-    raise NotImplementedError("Switch sizing not implemented.")
+    specs = parse_toml_switch_input(args['--input'])
+    results = get_switch_instance_results(cfg, specs)
+    formatted_results = format_results_dataframe(results, InstanceConfig.DEVICE)
+    if args['--gui']:
+      gui = GuiApp(cfg)
+      gui.show_results_table(results, title='Switch Sizing Results Table')
+    if args['--output']:
+      formatted_results.to_csv(args['--output'])
+    else:
+      print(formatted_results)
+    return True
+  
+  if args['--gui']:
+    gui = GuiApp(cfg)
+    gui.show_device_graphs(args)
 
 def config(args):
   cfg = None

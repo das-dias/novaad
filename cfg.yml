@@ -42,6 +42,8 @@ nch:
     av: av_n
     fom_bw: FoM_BW_n
     fom_nbw: FoM_Nbw_n
+    ron: ron_n
+    
   bsim4-params-path: /Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_nch_bsim4_params.csv
   bsim4-params-varmap:
     u0: U0_n
