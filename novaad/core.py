@@ -4,6 +4,8 @@ import warnings
 
 import re
 
+#TODO: Updata dataclass usage to pydantic's BaseModel
+# This will enable to easily save and load results to/from json files
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Dict, Tuple, Union, Optional
