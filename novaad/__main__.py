@@ -2,17 +2,6 @@
 
 LUT-based Analog/Mixed-Signal IC Design Tool using Gm/Id Methodology.
 
-Examples:
-  * Forward usage of Gm/Id design model:
-    Size a device from a DC-OP and a channel 
-    length (aliasing a intrinsic gain spec.).
-    
-
-  * Backward usage of Gm/Id design model:
-    Obtain the electrical parameters of a 
-    device from its W/L sizing and DC-OP.
-    
-
 Usage:
   novaad (device | moscap | switch ) -i=INPUT_FILE [-o=OUTPUT_FILE] [--noise] [--gui] [--verbose] [--config=CONFIG_FILE]
   novaad --gui --type=TYPE [--vds=VSB --vsb=VSB --lch-plot LCH_PLOT ...] [--config=CONFIG_FILE]
@@ -612,7 +601,7 @@ def format_results_dataframe(
         formatted_results["FOM Av*Ft [GHz]"] = results["fom_bw"].apply(
             lambda x: f"{x/1e9:.4f}"
         )
-        formatted_results["FOM NBW [GHz/V]"] = results["fom_nbw"].apply(
+        formatted_results["FOM Ft*(Gm/Id) [GHz/V]"] = results["fom_nbw"].apply(
             lambda x: f"{x/1e9:.4f}"
         )
     if instance_config is InstanceConfig.SWITCH:
