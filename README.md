@@ -116,6 +116,9 @@ pch:
 
 ```
 
+This configuration file can be parsed to the CLI to under the ```--config``` flag. Alternatively, you can create a configuration file with the default name ```novaad.cfg.yml``` in the same directory as the CLI is being executed and the tool will automatically load it without the need to specify the ```--config``` flag.
+
+
 After creating the configuration file and creating the LUTs, you are finally able to use the CLI to perform the Gm/Id design.
 
 * **Help**
