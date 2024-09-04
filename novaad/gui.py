@@ -142,10 +142,10 @@ class GuiApp:
         ], "Invalid device type. Must be 'nch' or 'pch'."
         
         self.device = Device(
-            lut_path=self.config[device_type]["lut-path"],
+            lut_path=self.config[device_type]["lut_path"],
             device_type=device_type,
-            bsim4params_path=self.config[device_type]["bsim4-params-path"],
-            ref_width=float(self.config[device_type]["ref-width"]),
+            bsim4params_path=self.config[device_type]["bsim4_params_path"],
+            ref_width=float(self.config[device_type]["ref_width"]),
         )
 
         target_lch = (

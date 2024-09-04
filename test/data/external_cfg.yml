@@ -1,0 +1,10 @@
+# Author: Diogo Andre
+# Description: Config file for gmid tool
+# Date: 28-08-2024
+
+nch: 
+  lut_path: /Users/dasdias/Documents/ICDesign/cadence_workflow/novaad/test/data/test_nch_lut_renamed.csv
+  bsim4_params_path: /Users/dasdias/Documents/ICDesign/cadence_workflow/novaad/test/data/test_nch_bsim4_params_renamed.csv
+  ref_width: 10e-6 # reference channel width
+
+out_log_path: ./log

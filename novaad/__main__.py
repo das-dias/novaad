@@ -14,12 +14,11 @@ Examples:
     
 
 Usage:
-  novaad (device | moscap | switch ) -i=INPUT_FILE [-o=OUTPUT_FILE] [--gui] [--verbose]
-  novaad --gui --type=TYPE [--vds=VSB --vsb=VSB --lch-plot LCH_PLOT ...]
+  novaad (device | moscap | switch ) -i=INPUT_FILE [-o=OUTPUT_FILE] [--gui] [--verbose] [--config=CONFIG_FILE]
+  novaad --gui --type=TYPE [--vds=VSB --vsb=VSB --lch-plot LCH_PLOT ...] [--config=CONFIG_FILE]
   novaad (-h | --help)
   novaad --version
   novaad COMMAND_FILE
-  novaad --config=CONFIG_FILE
 
 Options:
   -h --help                   Show this screen.
@@ -214,15 +213,15 @@ def get_device_instance_results(
     )
     devices = {}
     device_types = [
-        dt for dt in ["nch", "pch"] if dt in config and "lut-path" in config[dt]
+        dt for dt in ["nch", "pch"] if dt in config and "lut_path" in config[dt]
     ]
 
     for device_type in device_types:
         devices[device_type] = Device(
-            lut_path=config[device_type]["lut-path"],
+            lut_path=config[device_type]["lut_path"],
             device_type=DeviceType(device_type),
-            bsim4params_path=config[device_type]["bsim4-params-path"],
-            ref_width=float(config[device_type]["ref-width"]),
+            bsim4params_path=config[device_type]["bsim4_params_path"],
+            ref_width=float(config[device_type]["ref_width"]),
         )
     for id in spec_input:
         spec = spec_input[id]
@@ -353,14 +352,14 @@ def get_moscap_instance_results(
 
     devices = {}
     device_types = [
-        dt for dt in ["nch", "pch"] if dt in config and "lut-path" in config[dt]
+        dt for dt in ["nch", "pch"] if dt in config and "lut_path" in config[dt]
     ]
 
     for device_type in device_types:
         devices[device_type] = Moscap(
-            lut_path=config[device_type]["lut-path"],
+            lut_path=config[device_type]["lut_path"],
             device_type=DeviceType(device_type),
-            ref_width=float(config[device_type]["ref-width"]),
+            ref_width=float(config[device_type]["ref_width"]),
         )
 
     for id in spec_input:
@@ -479,13 +478,13 @@ def get_switch_instance_results(
 
     devices = {}
     device_types = [
-        dt for dt in ["nch", "pch"] if dt in config and "lut-path" in config[dt]
+        dt for dt in ["nch", "pch"] if dt in config and "lut_path" in config[dt]
     ]
     for device_type in device_types:
         devices[device_type] = Switch(
-            lut_path=config[device_type]["lut-path"],
+            lut_path=config[device_type]["lut_path"],
             device_type=DeviceType(device_type),
-            ref_width=float(config[device_type]["ref-width"]),
+            ref_width=float(config[device_type]["ref_width"]),
         )
 
     for id in spec_input:
@@ -658,10 +657,11 @@ def config(args):
     validate_all_configs()
     cfg: Config = Config()
     if args["--config"]:
-        cfg: Config = Config().from_file(args["--config"])
+        Config.CONFIG_SOURCES = FileSource(file=args["--config"])
     cfg: dict = cfg.model_dump()
     cfg = {k:v for k,v in cfg.items() if v is not None}
-    return cfg.model_dump()
+    pprint(cfg)
+    return cfg
 
 
 def main():
