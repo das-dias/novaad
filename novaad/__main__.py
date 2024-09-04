@@ -128,6 +128,9 @@ def validate_input_file(input_data: dict) -> dict:
                 continue
             if type(device_data[key]) is int:
                 device_data[key] = float(device_data[key])
+            # limit input data to single value floats. forbid lists to 
+            # avoid ambiguous behaviour when computing cartesian products 
+            # upon performing look up operations.
             if type(device_data[key]) is not float:
                 raise ValueError(
                     f"Invalid input data type for {key} in instance {device_id}."

@@ -1,5 +1,5 @@
 [device]
-m0 = { type = "nch", vds = 0.5, vsb = 0.0, lch = 180e-9, gmid = 26, gm = 1e-3 }
+m0 = { type = "nch", vds = 0.5, vsb = 0.0, lch = 180e-9, gmid = 26, gm = 1e-3 } # Minimum ds is 0.01
 m1 = { type = "pch", vgs = 0.8, vds = 1.3, vsb = 0.0, lch = 180e-9, gmid = 23, gm = 1e-3 } # No output generated for this device; there is no LUT
 m2 = { type = "nch" , vgs = 0.8, vds = 0.5, vsb = 0.0, lch = 180e-9, gmid = 10, ids = 500e-6 }
 m3 = { type = "nch" , vgs = 0.8, vds = 0.5, vsb = 0.0, lch = 1e-6, wch = 12e-6, ids = 100e-6 }

@@ -218,9 +218,13 @@ class Device:
         Returns:
             DataFrame: Interpolated output data DataFrame(ydata, columns=ycols)
         """
+        
         do_interpolation = target is not None
+        
         xcols = []
         if do_interpolation:
+            target = {k: v if isinstance(v, list) else [v] for k, v in target.items()}
+            target = {k: v for k, v in target.items() if all([x is not None for x in v])}
             xcols = list(target.keys())
 
         xcols = [col for col in xcols if col in self.lut.columns]
@@ -237,11 +241,14 @@ class Device:
         newdf = self.lut[yxcols]
 
         # assert target points have all the same length
-        assert all(
-            [len(target[col]) == len(target[xcols[0]]) for col in xcols]
-        ), "Invalid target points. All target points must have the same length"
-        target_points = squeeze(array(list(target.values())))
-
+        #assert all(
+        #    [len(target[col]) == len(target[xcols[0]]) for col in xcols]
+        #), "Invalid target points. All target points must have the same length"
+        #target_points = squeeze(array(list(target.values())))
+        
+        # target points don't require the same length. A cartesian product is performed
+        # to obtain all possible combinations of target points
+        target_points = squeeze(array(cartesian_product(list(target.values()))))
         if len(target_points.shape) == 1:
             target_points = target_points.reshape(-1, 1)
         target_df = DataFrame(target_points.T, columns=xcols)
@@ -339,34 +346,12 @@ class Device:
           sizing_spec.gmoverid = (array(sizing_spec.gm) / (sizing_spec.ids)).tolist()
         ycols = ["jd", "lch", "vgs", "vds", "vsb", "gmoverid"]
         target = {
-            "vgs": (
-                sizing_spec.vgs
-                if isinstance(sizing_spec.vgs, list)
-                else [sizing_spec.vgs]
-            ),
-            "vds": (
-                sizing_spec.vds
-                if isinstance(sizing_spec.vds, list)
-                else [sizing_spec.vds]
-            ),
-            "vsb": (
-                sizing_spec.vsb
-                if isinstance(sizing_spec.vsb, list)
-                else [sizing_spec.vsb]
-            ),
-            "lch": (
-                sizing_spec.lch
-                if isinstance(sizing_spec.lch, list)
-                else [sizing_spec.lch]
-            ),  # I included channel length to replace instrinsic gain spec. Using Av would require early voltage Va to also be extracted.
-            "gmoverid": (
-                sizing_spec.gmoverid
-                if isinstance(sizing_spec.gmoverid, list)
-                else [sizing_spec.gmoverid]
-            ),
+            "vgs": sizing_spec.vgs,
+            "vds": sizing_spec.vds,
+            "vsb": sizing_spec.vsb,
+            "lch": sizing_spec.lch,  # I included channel length to replace instrinsic gain spec. Using Av would require early voltage Va to also be extracted.
+            "gmoverid": sizing_spec.gmoverid,
         }
-        if target['vgs']==[None]:
-          target.pop('vgs')
         closest_target = self.look_up(ycols, target, return_xy=True, **kwargs)
         sizing = Sizing(lch=closest_target["lch"].values.tolist())
         dcop = DcOp(
@@ -406,10 +391,10 @@ class Device:
         }
         ycols = ["jd", "gm", "gds", "cgg", "cgs", "cgd", "cdb", "csb", "ft", "av"]
         target = {
-            "vgs": dcop.vgs if isinstance(dcop.vgs, list) else [dcop.vgs],
-            "vds": dcop.vds if isinstance(dcop.vds, list) else [dcop.vds],
-            "vsb": dcop.vsb if isinstance(dcop.vsb, list) else [dcop.vsb],
-            "lch": sizing.lch if isinstance(sizing.lch, list) else [sizing.lch],
+            "vgs": dcop.vgs,
+            "vds": dcop.vds,
+            "vsb": dcop.vsb,
+            "lch": sizing.lch,
             "jd": target_jd.tolist(),
         }
 
@@ -454,7 +439,7 @@ class Device:
           Returns:
             float: Total gate-referred noise rms voltage
           
-          TODO: Use BSIM4 model information to compute the noise
+          TODO: Use EKV model information to compute the noise
         """
         include_flicker = kwargs.get("include_flicker", True)
         t_kelvin = t_c + 273.15
@@ -469,6 +454,14 @@ class Device:
           vng_psd = lambda f: (1 + flicker_corner_freq/f)*4*k*t_kelvin*Gamma / (ids * gmoverid)
           vng_rms = quad(vng_psd, 1, noise_fmax)[0]**0.5
         return vng_rms
+    
+    def equivalent_common_source_hd2(self, dcop: DcOp, sizing: Sizing, **kwargs):
+        """Compute equivalent common source HD2 using the Gm/Id method and EKV model information."""
+        raise NotImplementedError
+    
+    def equivalent_common_source_hd3(self, dcop: DcOp, sizing: Sizing, **kwargs):
+        """Compute equivalent common source HD3 using the Gm/Id method and EKV model information."""
+        raise NotImplementedError
       
     def wave_vs_wave(
         self, ycol: str, xcol: str, query: str = None
@@ -565,26 +558,10 @@ class Moscap(Device):
         }
         ycols = ["cgg", "lch", "vgs", "vds", "vsb"]
         target = {
-            "vgs": (
-                sizing_spec.vgs
-                if isinstance(sizing_spec.vgs, list)
-                else [sizing_spec.vgs]
-            ),
-            "vds": (
-                sizing_spec.vds
-                if isinstance(sizing_spec.vds, list)
-                else [sizing_spec.vds]
-            ),
-            "vsb": (
-                sizing_spec.vsb
-                if isinstance(sizing_spec.vsb, list)
-                else [sizing_spec.vsb]
-            ),
-            "lch": (
-                sizing_spec.lch
-                if isinstance(sizing_spec.lch, list)
-                else [sizing_spec.lch]
-            ),  # I included channel length to replace instrinsic gain spec. Using Av would require early voltage Va to also be extracted.
+            "vgs": sizing_spec.vgs,
+            "vds": sizing_spec.vds,
+            "vsb": sizing_spec.vsb,
+            "lch": sizing_spec.lch,  # I included channel length to replace instrinsic gain spec. Using Av would require early voltage Va to also be extracted.
         }
         closest_target = self.look_up(ycols, target, return_xy=True, **kwargs)
         sizing = Sizing(lch=closest_target["lch"].values.tolist())
@@ -615,10 +592,10 @@ class Moscap(Device):
         }
         ycols = ["cgg", "cgs", "cgd", "cdb", "csb"]
         target = {
-            "vgs": dcop.vgs if isinstance(dcop.vgs, list) else [dcop.vgs],
-            "vds": dcop.vds if isinstance(dcop.vds, list) else [dcop.vds],
-            "vsb": dcop.vsb if isinstance(dcop.vsb, list) else [dcop.vsb],
-            "lch": sizing.lch if isinstance(sizing.lch, list) else [sizing.lch],
+            "vgs": dcop.vgs,
+            "vds": dcop.vds,
+            "vsb": dcop.vsb,
+            "lch": sizing.lch,
         }
 
         wch_ratio = array(sizing.wch) / self.ref_width
@@ -697,26 +674,10 @@ class Switch(Device):
         }
         ycols = ["ron", "lch", "vgs", "vds", "vsb"]
         target = {
-            "vgs": (
-                sizing_spec.vgs
-                if isinstance(sizing_spec.vgs, list)
-                else [sizing_spec.vgs]
-            ),
-            "vds": (
-                sizing_spec.vds
-                if isinstance(sizing_spec.vds, list)
-                else [sizing_spec.vds]
-            ),
-            "vsb": (
-                sizing_spec.vsb
-                if isinstance(sizing_spec.vsb, list)
-                else [sizing_spec.vsb]
-            ),
-            "lch": (
-                sizing_spec.lch
-                if isinstance(sizing_spec.lch, list)
-                else [sizing_spec.lch]
-            ),  # I included channel length to replace instrinsic gain spec. Using Av would require early voltage Va to also be extracted.
+            "vgs": sizing_spec.vgs,
+            "vds": sizing_spec.vds,
+            "vsb": sizing_spec.vsb,
+            "lch": sizing_spec.lch,  
         }
         closest_target = self.look_up(ycols, target, return_xy=True, **kwargs)
         sizing = Sizing(lch=closest_target["lch"].values.tolist())
@@ -747,10 +708,10 @@ class Switch(Device):
         }
         ycols = ["ron", "cgs", "cgd", "cdb", "csb"]
         target = {
-            "vgs": dcop.vgs if isinstance(dcop.vgs, list) else [dcop.vgs],
-            "vds": dcop.vds if isinstance(dcop.vds, list) else [dcop.vds],
-            "vsb": dcop.vsb if isinstance(dcop.vsb, list) else [dcop.vsb],
-            "lch": sizing.lch if isinstance(sizing.lch, list) else [sizing.lch],
+            "vgs": dcop.vgs,
+            "vds": dcop.vds,
+            "vsb": dcop.vsb,
+            "lch": sizing.lch,
         }
 
         wch_ratio = self.ref_width / array(sizing.wch)
@@ -854,6 +815,15 @@ def test_device_look_up():
     row = device.look_up(output_cols, target, return_xy=True, **kwargs)
     print(row)
 
+    target = {
+        "vgs": [device.lut["vgs"].mean()],
+        "vds": [0.9],
+        "vsb": [0.0],
+        "lch": [device.lut["lch"].min() * 1],
+        "gmoverid": [10.0, 20.0, 1.0],
+    }
+    row = device.look_up(output_cols, target, return_xy=True, **kwargs)
+    print(row)
 
 def test_device_sizing():
     print("test_device_sizing()\n")

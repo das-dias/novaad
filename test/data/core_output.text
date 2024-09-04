@@ -37,14 +37,18 @@ test_device_look_up()
 Interpolating...
 Default:
 Nearest:
-             ft       av      jd           lch  gmoverid  vds  vsb  vgs
-1  2.770000e+09  175.469  8.0358  1.800000e-07      10.0  0.9  0.0  0.9
+   vsb      jd  gmoverid            ft  vds  vgs       av           lch
+1  0.0  8.0358      10.0  2.770000e+09  0.9  0.9  175.469  1.800000e-07
 Linear:
-             ft        av       jd           lch  gmoverid  vds  vsb  vgs
-1  2.600000e+09  181.3495  7.80515  1.800000e-07      10.0  0.9  0.0  0.9
+   vsb       jd  gmoverid            ft  vds  vgs        av           lch
+1  0.0  7.80515      10.0  2.600000e+09  0.9  0.9  181.3495  1.800000e-07
 PCHIP:
-             ft        av       jd           lch  gmoverid  vds  vsb  vgs
-1  2.600000e+09  181.3495  7.80515  1.800000e-07      10.0  0.9  0.0  0.9
+   vsb       jd  gmoverid            ft  vds  vgs        av           lch
+1  0.0  7.80515      10.0  2.600000e+09  0.9  0.9  181.3495  1.800000e-07
+   vsb          jd  gmoverid            ft  vds  vgs          av           lch
+1  0.0    7.928523      10.0  2.472500e+09  0.9  0.9  185.759875  1.800000e-07
+4  0.0    1.931135      20.0  4.575000e+09  0.9  0.9   53.595268  1.800000e-07
+7  0.0  371.608500       1.0  4.095606e+10  0.9  0.9   10.891525  1.800000e-07
 test_device_sizing()
 
    vds  vsb           lch  vgs  gmoverid     gm
