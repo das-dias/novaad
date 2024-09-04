@@ -46,9 +46,55 @@ There are a sequence of steps required to use the tool:
 
 ### *2.1. API*
 
-```python
+The CLI is supported by a flexible Python library that can be used from a Python script. The following example shows how to use the library to perform the Gm/Id design:
 
+```python
+# Create a Device instance object
+device = Device(
+        "./test/data/test_nch_lut_renamed.csv",
+        device_type="nch",
+)
+
+# Perform a customized LUT lookup:
+
+output_cols = ["av", "jd", "ft"]
+target = { # all lists must have the same length
+    "vgs": [device.lut["vgs"].mean()],
+    "vds": [0.9],
+    "vsb": [0.0],
+    "lch": [device.lut["lch"].min() * 1],
+    "gmoverid": [10.0],
+}
+
+kwargs = { # interp_method: "pchip" (default), see Pandas.DataFrame.interpolate for more options
+    "interp_method": "nearest",
+    "interp_mode": "default",
+}
+row = device.look_up(output_cols,targetreturn_xy=True, **kwargs)
+
+print(row)
+""" row ( as Pandas.DataFrame )
+Output: 
+
+       jd           lch            ft  gmoverid  vgs  vsb  vds       av
+1  8.0358  1.800000e-07  2.770000e+09      10.0  0.9  0.0  0.9  175.469
+"""
+
+# Perform a Gm/Id sizing operation for a given device:
+
+sizing_spec = DeviceSizingSpecification(
+    vgs=0.5, vds=0.6, vsb=0.0, lch=device.lut["lch"].min(), gmoverid=10.0, gm=1e-3
+)
+sizing = device.sizing(sizing_spec)
+print(sizing.to_df())
+""" sizing ( as Pandas.DataFrame )
+Output:
+            lch       wch
+0  1.800000e-07  0.000013
+"""
 ```
+
+This API effectively enables the user to fit the tool into an optimization loop to perform automatic sizing of whole circuits like OTA's, filters, buffers, etc.
 
 ### *2.2. CLI*
 

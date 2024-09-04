@@ -781,29 +781,30 @@ class Switch(Device):
 # Examples
 
 
-def test_device(lut_varmap):
+def test_device():
+    print("test_device()\n")
     device = Device(
-        "/Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_nch_lut.csv",
+        "./test/data/test_nch_lut_renamed.csv",
         device_type="nch",
-        lut_varmap=lut_varmap,
     )
-    print(device.lut.head())
+    pprint(device)
 
 
-def test_device_dc_op(lut_varmap):
+def test_device_dc_op():
+    print("test_device_dc_op()\n")
     device = Device(
-        "/Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_nch_lut.csv",
+        "./test/data/test_nch_lut_renamed.csv",
         device_type="nch",
-        lut_varmap=lut_varmap,
     )
 
     dcop = DcOp(vgs=0.5, vds=0.6, vsb=0.0, ids=1e-3)
+    pprint(dcop)
     print(dcop.to_array())
     print(dcop.to_df())
 
     print(device.find_nearest_unique(1.8, "vgs"))
     new_dcop = DcOp(
-        vgs=device.lut["vgs"].unique().tolist(),
+        vgs=device.lut["vgs"].mean(),
         vds=device.lut["vds"].mean(),
         vsb=0.0,
     )
@@ -811,11 +812,11 @@ def test_device_dc_op(lut_varmap):
     print(new_dcop.to_df())
 
 
-def test_device_look_up(lut_varmap):
+def test_device_look_up():
+    print("test_device_look_up()\n")
     device = Device(
-        "/Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_nch_lut.csv",
+        "./test/data/test_nch_lut_renamed.csv",
         device_type="nch",
-        lut_varmap=lut_varmap,
     )
     output_cols = ["av", "jd", "ft"]
     target = {
@@ -823,7 +824,7 @@ def test_device_look_up(lut_varmap):
         "vds": [0.9],
         "vsb": [0.0],
         "lch": [device.lut["lch"].min() * 1],
-        "gmoverid": [1.0, 27.0],
+        "gmoverid": [10.0],
     }
     pprint(target)
     print("Interpolating...")
@@ -854,11 +855,11 @@ def test_device_look_up(lut_varmap):
     print(row)
 
 
-def test_device_sizing(lut_varmap):
+def test_device_sizing():
+    print("test_device_sizing()\n")
     device = Device(
-        "/Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_nch_lut.csv",
+        "./test/data/test_nch_lut_renamed.csv",
         device_type="nch",
-        lut_varmap=lut_varmap,
     )
 
     sizing_spec = DeviceSizingSpecification(
@@ -882,11 +883,11 @@ def test_device_sizing(lut_varmap):
     print(sizing.to_df())
 
 
-def test_device_electric_model(lut_varmap):
+def test_device_electric_model():
+    print("test_device_electric_model()\n")
     device = Device(
-        "/Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_nch_lut.csv",
+        "./test/data/test_nch_lut_renamed.csv",
         device_type="nch",
-        lut_varmap=lut_varmap,
     )
 
     sizing_spec = DeviceSizingSpecification(
@@ -905,11 +906,11 @@ def test_device_electric_model(lut_varmap):
     print(electric_model.to_df())
 
 
-def test_device_wave_vs_wave(lut_varmap):
+def test_device_wave_vs_wave():
+    print("test_device_wave_vs_wave()\n")
     device = Device(
-        "/Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_nch_lut.csv",
+        "./test/data/test_nch_lut_renamed.csv",
         device_type="nch",
-        lut_varmap=lut_varmap,
     )
 
     gm_id_vs_vgs = device.wave_vs_wave("gmoverid", "vgs")
@@ -942,63 +943,15 @@ def test_device_wave_vs_wave(lut_varmap):
 
 
 if __name__ == "__main__":
-    lut_varmap = {
-        "vgs": "vgs_n",
-        "lch": "length_wave",
-        "weff": "weff_n",
-        "leff": "leff_n",
-        "vgseff": "vgseff_n",
-        "vds": "vds_n",
-        "vdsat": "vdsat_n",
-        "vsb": "vsb_n",
-        "vbseff": "vbseff_n",
-        "vth": "vth_n",
-        "qg": "qg_n",
-        "qd": "qd_n",
-        "qs": "qs_n",
-        "gm": "gm_n",
-        "gds": "gds_n",
-        "ids": "id_n",
-        "jd": "jd_n",
-        "cgs": "cgs_n",
-        "cgd": "cgd_n",
-        "cdb": "cdb_n",
-        "csb": "csb_n",
-        "cgg": "cgg_n",
-        "gmoverid": "gmoverid_n",
-        "ft": "ft_n",
-        "av": "av_n",
-        "fom_bw": "FoM_BW_n",
-        "fom_nbw": "FoM_Nbw_n",
-    }
-    lut_varmap = {v: k for k, v in lut_varmap.items()}
 
-    bsim4_varmap = {
-        "u0": "U0_n",
-        "lp": "LP_n",
-        "uq": "UA_n",
-        "vfb": "VFB_n",
-        "phis": "PHIs_n",
-        "eu": "EU_n",
-        "c0": "C0_n",
-        "uc": "UC_n",
-        "ud": "UD_n",
-        "tox": "TOXE_n",
-        "epsrox": "EPSROX_n",
-        "af": "AF_n",
-        "ef": "EF_n",
-        "ntnoi": "NTNOI_n",
-    }
-    bsim4_varmap = {v: k for k, v in bsim4_varmap.items()}
+    test_device()
 
-    # test_device(lut_varmap)
+    test_device_dc_op()
 
-    # test_device_dc_op(lut_varmap)
+    test_device_look_up()
 
-    # test_device_look_up(lut_varmap)
+    test_device_sizing()
 
-    # test_device_sizing(lut_varmap)
+    test_device_electric_model()
 
-    # test_device_electric_model(lut_varmap)
-
-    test_device_wave_vs_wave(lut_varmap)
+    test_device_wave_vs_wave()
