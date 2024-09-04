@@ -2,8 +2,8 @@ numpy
 pandas
 pyyaml
 plotly
-dash
 docopt
 scipy
 pydantic
+confz
 toml

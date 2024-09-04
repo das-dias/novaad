@@ -91,6 +91,9 @@ class GuiApp:
                 "FoM (Gm/Id)*Ft [GHz/V]": results["fom_nbw"].apply(
                     lambda x: f"{x/1e9:.4f}" if x is not None else "N/A"
                 ),
+                "Vng,rms [uV]": results["vng_rms"].apply(
+                    lambda x: f"{x/1e-6:.4f}" if x is not None else "N/A"
+                ),
             }
         )
 
@@ -144,7 +147,6 @@ class GuiApp:
         self.device = Device(
             lut_path=self.config[device_type]["lut_path"],
             device_type=device_type,
-            bsim4params_path=self.config[device_type]["bsim4_params_path"],
             ref_width=float(self.config[device_type]["ref_width"]),
         )
 

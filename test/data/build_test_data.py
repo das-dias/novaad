@@ -44,7 +44,7 @@ df = read_csv('/Users/dasdias/Documents/ICDesign/cadence_workflow/novaad/test/da
 bsim4_params_varmap = {
     "u0": "U0_n",
     "lp": "LP_n",
-    "uq": "UA_n",
+    "ua": "UA_n",
     "vfb": "VFB_n",
     "phis": "PHIs_n",
     "eu": "EU_n",

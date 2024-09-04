@@ -12,7 +12,8 @@ from typing import List, Dict, Tuple, Union, Optional
 from enum import Enum, EnumMeta
 
 warnings.simplefilter(action="ignore", category=DeprecationWarning)
-from numpy import ndarray, array, abs, squeeze
+from numpy import ndarray, array, abs, squeeze, linspace
+from scipy.integrate import quad
 
 # from scipy.interpolate import griddata
 from scipy.spatial.distance import cdist
@@ -182,7 +183,6 @@ class Device:
     def __init__(
         self,
         lut_path: DeviceLutPath,
-        bsim4params_path: Optional[DeviceLutPath] = None,
         device_type: str = "nch",
         ref_width: float = 10e-6,
         **kwargs,
@@ -195,9 +195,6 @@ class Device:
         self.ref_width = ref_width
         # remove columns with all NaN values
         self.lut = self.lut.dropna(axis=1, how="all")
-        if bsim4params_path:
-            self.bsim4params = read_csv(bsim4params_path)
-            self.bsim4params = self.bsim4params.dropna(axis=1, how="all")
         
 
     def find_nearest_unique(self, value: float, query) -> Tuple[float, int]:
@@ -435,16 +432,44 @@ class Device:
                 col, electric_model.__getattribute__(col).tolist()
             )
         return electric_model
-
-    def thermal_noise_psd(self, dcop: DcOp, sizing: Sizing, **kwargs):
-        raise NotImplementedError
-
-    def flicker_noise_psd(self, dcop: DcOp, sizing: Sizing, f: ndarray, **kwargs):
-        raise NotImplementedError
-
-    def noise_summary(self, dcop: DcOp, sizing: Sizing, **kwargs):
-        raise NotImplementedError
-
+    
+    def total_gate_referred_noise(self, dcop: DcOp, sizing: Sizing, t_c:float, flicker_corner_freq:float, noise_fmax:float, **kwargs):
+        """ Computes the thermal + flicker gate-referred noise rms voltage using a simple model.
+          Considering the flicekr corner frequency (fco) where:
+            out_thermal_noise = out_flicker_noise
+          Then:
+            out_flicker_noise = out_thermal_noise * fco / f
+            
+            total_out_noise = out_thermal_noise*(1 + fco/f)
+          As such: 
+            total_in_noise = total_out_noise / gm **2 = (1+fco/f)* 4* k*T*Gamma / (Id * gm/Id)
+        
+          Args:
+            dcop (DcOp): DC operating point containing voltages and currents
+            sizing (Sizing): Device sizing
+            bw (float): Bandwidth
+            t_c (float): Junction Temperature in Celsius
+            flicker_corner_freq (float): Flicker corner frequency in Hz
+            noise_fmax (float): Maximum frequency of interest in Hz. Should be 40*Fclk in dynamic systems.
+          Returns:
+            float: Total gate-referred noise rms voltage
+          
+          TODO: Use BSIM4 model information to compute the noise
+        """
+        include_flicker = kwargs.get("include_flicker", True)
+        t_kelvin = t_c + 273.15
+        Gamma = 2/3 if self.type == DeviceType.NMOS else 1/3
+        k = 1.38e-23
+        electric_model = self.electric_model(dcop, sizing, **kwargs)
+        ids = array(dcop.ids)
+        gm = array(electric_model.gm)
+        gmoverid = gm / ids
+        vng_rms = (noise_fmax * 4*k*t_kelvin*Gamma / (ids * gmoverid))**0.5
+        if include_flicker:
+          vng_psd = lambda f: (1 + flicker_corner_freq/f)*4*k*t_kelvin*Gamma / (ids * gmoverid)
+          vng_rms = quad(vng_psd, 1, noise_fmax)[0]**0.5
+        return vng_rms
+      
     def wave_vs_wave(
         self, ycol: str, xcol: str, query: str = None
     ) -> Optional[DataFrame]:
@@ -489,14 +514,12 @@ class Moscap(Device):
     def __init__(
         self,
         lut_path: DeviceLutPath,
-        bsim4params_path: Optional[DeviceLutPath] = None,
         device_type: str = "nch",
         ref_width: float = 10e-6,
         **kwargs,
     ):
         super().__init__(
             lut_path,
-            bsim4params_path,
             device_type,
             ref_width,
             **kwargs,
@@ -517,11 +540,11 @@ class Moscap(Device):
             DataFrame: Resulting device sizing and electrical parameters
         """
         default_sizing = MoscapSizingSpecification(
-            vgs=self.lut["vgs"].mean(),
-            vds=self.lut["vds"].min(),
-            vsb=self.lut["vds"].min(),
-            lch=self.lut["lch"].min(),
-            cgg=self.lut["cgg"].mean(),
+            vgs=[self.lut["vgs"].mean()],
+            vds=[self.lut["vds"].min()],
+            vsb=[self.lut["vds"].min()],
+            lch=[self.lut["lch"].min()],
+            cgg=[self.lut["cgg"].mean()],
         )
 
         if sizing_spec is None:
@@ -623,18 +646,14 @@ class Switch(Device):
     def __init__(
         self,
         lut_path: DeviceLutPath,
-        bsim4params_path: Optional[DeviceLutPath] = None,
         device_type: str = "nch",
         ref_width: float = 10e-6,
         **kwargs,
     ):
         super().__init__(
             lut_path,
-            bsim4params_path,
             device_type,
             ref_width,
-            lut_varmap,
-            bsim4params_varmap,
             **kwargs,
         )
 
@@ -653,11 +672,11 @@ class Switch(Device):
             DataFrame: Resulting device sizing and electrical parameters
         """
         default_sizing = SwitchSizingSpecification(
-            vgs=self.lut["vgs"].max(),
-            vds=self.lut["vds"].min(),
-            vsb=self.lut["vds"].mean(),
-            lch=self.lut["lch"].min(),
-            ron=self.lut["ron"].min(),
+            vgs=[self.lut["vgs"].max()],
+            vds=[self.lut["vds"].min()],
+            vsb=[self.lut["vds"].mean()],
+            lch=[self.lut["lch"].min()],
+            ron=[self.lut["ron"].min()],
         )
 
         if sizing_spec is None:

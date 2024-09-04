@@ -14,7 +14,7 @@ Examples:
     
 
 Usage:
-  novaad (device | moscap | switch ) -i=INPUT_FILE [-o=OUTPUT_FILE] [--gui] [--verbose] [--config=CONFIG_FILE]
+  novaad (device | moscap | switch ) -i=INPUT_FILE [-o=OUTPUT_FILE] [--noise] [--gui] [--verbose] [--config=CONFIG_FILE]
   novaad --gui --type=TYPE [--vds=VSB --vsb=VSB --lch-plot LCH_PLOT ...] [--config=CONFIG_FILE]
   novaad (-h | --help)
   novaad --version
@@ -31,6 +31,7 @@ Options:
   --vsb=VSB                   Bulk-to-Source Voltage. Default value is LUT minimum.
   --type=TYPE                 Device Type [default: 'nch'].
   --lch-plot                  Channel lengths to include in plot [default: 'all'].
+  --noise                     Include noise summary in the analysis.
   --verbose                   Verbose Output.
   --config=CONFIG_FILE        Configuration file [default: 'cfg.yml'].
 """
@@ -90,7 +91,7 @@ class Config(BaseConfig):
 
     CONFIG_SOURCES = FileSource(
         folder=str(Path(__file__).resolve().cwd()),
-        file="cfg.yml",
+        file="novaad.cfg.yml",
         file_from_env="NOVAAD_ENV",
         file_from_cl="--config",
     )
@@ -110,6 +111,11 @@ class InstanceObjective(BaseEnum):
     SIZING = "sizing"
     CHARACTERIZATION = "characterization"
 
+@dataclass
+class NoiseSpecInput:
+    flicker_corner_freq: float
+    noise_fmax: float
+    t_celsius: float
 
 @dataclass
 class SpecInput:
@@ -120,8 +126,10 @@ class SpecInput:
     sizing_spec: Union[
         DeviceSizingSpecification, MoscapSizingSpecification, SwitchSizingSpecification
     ]
+    noise: Optional[NoiseSpecInput] = None
 
-
+# TODO: Change data structures to Pydantic BaseModels to automatically 
+# validate input data types and values.
 def validate_input_file(input_data: dict) -> dict:
     """Checks if all data parsed are floats"""
     for device_id in input_data:
@@ -150,11 +158,12 @@ def parse_toml_device_input(input_file: Union[str, Path]) -> dict[str, SpecInput
     specs: dict[str, SpecInput] = {}
     with open(input_file, "r") as fp:
         data = toml_load(fp)
+        noise_data = data.get("noise", {})
+        noise_data = validate_input_file(noise_data)
         data = data["device"]
-
         data = validate_input_file(data)
-
         for device_id in data:
+            device_noise_data = noise_data.get(device_id, None)
             device_data = data[device_id]
             specs[device_id] = SpecInput(
                 id=device_id,
@@ -177,6 +186,11 @@ def parse_toml_device_input(input_file: Union[str, Path]) -> dict[str, SpecInput
                     wch=[device_data["wch"]] if "wch" in device_data else None,
                     lch=[device_data["lch"]],
                 ),
+                noise = NoiseSpecInput(
+                    flicker_corner_freq=device_noise_data.get("flicker_corner_freq", 40e3),
+                    noise_fmax=device_noise_data.get("noise_fmax", 100e6),
+                    t_celsius=device_noise_data.get("t_celsius", 27)
+                ) if device_noise_data else None
             )
     return specs
 
@@ -184,6 +198,8 @@ def parse_toml_device_input(input_file: Union[str, Path]) -> dict[str, SpecInput
 def get_device_instance_results(
     config: dict,
     spec_input: dict[str, SpecInput],
+    return_noise: bool = False,
+    **kwargs
 ) -> DataFrame:
     """Get each instance DCOP, Sizing and Electrical Parameters."""
     result = DataFrame(
@@ -209,6 +225,7 @@ def get_device_instance_results(
             "ft",
             "fom_bw",
             "fom_nbw",
+            "vng_rms"
         ]
     )
     devices = {}
@@ -220,7 +237,6 @@ def get_device_instance_results(
         devices[device_type] = Device(
             lut_path=config[device_type]["lut_path"],
             device_type=DeviceType(device_type),
-            bsim4params_path=config[device_type]["bsim4_params_path"],
             ref_width=float(config[device_type]["ref_width"]),
         )
     for id in spec_input:
@@ -239,6 +255,12 @@ def get_device_instance_results(
         if spec.objective == InstanceObjective.SIZING:
             dcop, sizing = device.sizing(spec.sizing_spec, return_dcop=True)
         electric_model: ElectricModel = device.electric_model(dcop, sizing)
+        vng_rms = None
+        if return_noise and (spec.noise is not None):
+          t_celsius = spec.noise.t_celsius
+          flicker_corner_freq = spec.noise.flicker_corner_freq
+          noise_fmax = spec.noise.noise_fmax
+          vng_rms = device.total_gate_referred_noise(dcop,sizing,t_celsius,flicker_corner_freq,noise_fmax)
         result = concat(
             [
                 result,
@@ -272,6 +294,7 @@ def get_device_instance_results(
                             array(electric_model.ft)
                             * (array(electric_model.gm) / array(dcop.ids))
                         ).tolist(),
+                        "vng_rms": vng_rms
                     }
                 ),
             ]
@@ -411,7 +434,7 @@ def get_moscap_instance_results(
     result["fom_nbw"] = None
     result["gmoverid"] = None
     result["ron"] = None
-
+    result["vng_rms"] = None
     return result
 
 
@@ -536,7 +559,7 @@ def get_switch_instance_results(
     result["fom_nbw"] = None
     result["gmoverid"] = None
     result["cgg"] = None
-
+    result["vng_rms"] = None
     return result
 
 
@@ -549,6 +572,9 @@ def format_results_dataframe(
         data={
             "Type": results["type"],
             "ID": results["id"],
+            "Vng,rms [uV]": results["vng_rms"].apply(
+              lambda x: f"{x/1e-6:.4f}" if x is not None else None
+            ),
             "Vgs [V]": results["vgs"].apply(lambda x: f"{x:.2f}"),
             "Vds [V]": results["vds"].apply(lambda x: f"{x:.2f}"),
             "Vsb [V]": results["vsb"].apply(lambda x: f"{x:.2f}"),
@@ -607,7 +633,7 @@ def app(args: dict, cfg: dict):
 
     if args["device"]:
         specs = parse_toml_device_input(args["--input"])
-        results = get_device_instance_results(cfg, specs)
+        results = get_device_instance_results(cfg, specs, return_noise=args["--noise"])
         formatted_results = format_results_dataframe(results, InstanceConfig.DEVICE)
         if args["--gui"]:
             gui = GuiApp(cfg)
@@ -620,6 +646,7 @@ def app(args: dict, cfg: dict):
             print(formatted_results)
         return True
     elif args["moscap"]:
+        if args["--noise"]: warn("Noise analysis is only available for 'device'.")
         specs = parse_toml_moscap_input(args["--input"])
         results = get_moscap_instance_results(cfg, specs)
         formatted_results = format_results_dataframe(results, InstanceConfig.MOSCAP)
@@ -634,6 +661,7 @@ def app(args: dict, cfg: dict):
             print(formatted_results)
         return True
     elif args["switch"]:
+        if args["--noise"]: warn("Noise analysis is only available for 'device'.")
         specs = parse_toml_switch_input(args["--input"])
         results = get_switch_instance_results(cfg, specs)
         formatted_results = format_results_dataframe(results, InstanceConfig.SWITCH)
