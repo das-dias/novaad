@@ -2,85 +2,9 @@
 # Description: Config file for gmid tool
 # Date: 28-08-2024
 
-# Paths to input files
-#ref_width: 3e-5
-#nch: 
-# lut-path: ../28tsmc/nch_lut.csv
-# bsim4-params-path: 
-#pch_lut: ../28tsmc/pch_lut.csv
-#bsim4-params: ../28tsmc/bsim4_parameters_std.csv
-
 nch: 
-  lut-path: /Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_nch_lut.csv
-  ref-width: 10e-6 # reference channel width
-  # match left-hand side to lut csv header (right-hand side) - no need to change
-  varmap:
-    vgs: vgs_n
-    lch: length_wave
-    weff: weff_n
-    leff: leff_n
-    vgseff: vgseff_n
-    vds: vds_n
-    vdsat: vdsat_n
-    vsb: vsb_n
-    vbseff: vbseff_n
-    vth: vth_n
-    qg: qg_n
-    qd: qd_n
-    qs: qs_n
-    gm: gm_n
-    gds: gds_n
-    ids: id_n
-    jd: jd_n
-    cgs: cgs_n
-    cgd: cgd_n
-    cdb: cdb_n
-    csb: csb_n
-    cgg: cgg_n
-    gmoverid: gmoverid_n
-    ft: ft_n
-    av: av_n
-    fom_bw: FoM_BW_n
-    fom_nbw: FoM_Nbw_n
-    ron: ron_n
-    
-  bsim4-params-path: /Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_nch_bsim4_params.csv
-  bsim4-params-varmap:
-    u0: U0_n
-    lp: LP_n 
-    uq: UA_n 
-    vfb: VFB_n 
-    phis: PHIs_n 
-    eu: EU_n
-    c0: C0_n,
-    uc: UC_n
-    ud: UD_n 
-    toxe: TOXE_n 
-    epsrox: EPSROX_n
-    af: AF_n
-    ef: EF_n
-    ntnoi: NTNOI_n
+  lut_path: /Users/dasdias/Documents/ICDesign/cadence_workflow/novaad/test/data/test_nch_lut_renamed.csv
+  bsim4_params_path: /Users/dasdias/Documents/ICDesign/cadence_workflow/novaad/test/data/test_nch_bsim4_params_renamed.csv
+  ref_width: 10e-6 # reference channel width
 
-pch:
-  bsim4-params-path: /Users/dasdias/Documents/ICDesign/cadence_workflow/test/test_pch_bsim4_params.csv
-  ref-width: 10e-6 # reference channel width
-  bsim4-params-varmap:
-    c0: C0_p
-    u0: U0_p
-    lp: LP_p
-    ua: UA_p 
-    vfb: VFB_p 
-    phis: PHIs_p 
-    eu: EU_p
-    uc: UC_p 
-    ud: UD_p 
-    toxe: TOXE_p 
-    epsrox: EPSROX_p
-    af: AF_p 
-    ef: EF_p
-    ntnoi: NTNOI_p
-
-out-log: ./log
-
-# replacement config file
-cfg-path: ''
+out_log_path: ./log

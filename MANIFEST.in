@@ -7,3 +7,6 @@ include *.yaml
 # Include documentation files
 include *.txt
 include *.rst
+
+# Include tet data
+include test/data
