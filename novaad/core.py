@@ -128,10 +128,10 @@ class DcOp(BaseParametricObject):
 
 @dataclass
 class DeviceSizingSpecification(BaseParametricObject):
-    vgs: Optional[Union[float, List[float]]]
     vds: Optional[Union[float, List[float]]]
     vsb: Optional[Union[float, List[float]]]
     lch: Optional[Union[float, List[float]]]
+    vgs: Optional[Union[float, List[float]]] = None
     gmoverid: Optional[Union[float, List[float]]] = None
     # for simplicity of implementation, include DcOp
     ids: Optional[Union[float, List[float]]] = None
@@ -309,7 +309,6 @@ class Device:
             DataFrame: Resulting device sizing and electrical parameters
         """
         default_sizing = DeviceSizingSpecification(
-            vgs=self.lut["vgs"].mean(),
             vds=self.lut["vds"].mean(),
             vsb=self.lut["vds"].min(),
             lch=self.lut["lch"].min(),
@@ -323,19 +322,24 @@ class Device:
         assert all(
             [col in self.lut.columns for col in sizing_spec.__annotations__]
         ), "Invalid sizing_spec"
-        assert sizing_spec.vgs is not None, "vgs is required"
+        #assert sizing_spec.vgs is not None, "vgs is required"
         assert sizing_spec.vds is not None, "vds is required"
         assert sizing_spec.vsb is not None, "vsb is required"
         assert sizing_spec.lch is not None, "lch is required"
-        assert sizing_spec.gmoverid is not None, "gmoverid is required"
+        assert (sizing_spec.gmoverid is not None) or (
+          sizing_spec.ids is not None and sizing_spec.gm is not None
+        ), "gmoverid is required. Otherwise, ids and gm are required"
         assert (sizing_spec.gm is not None) or (
             sizing_spec.ids is not None
-        ), "gm or id is required"
+        ), "gm or id is required if gmoverid is provided"
 
         kwargs = {
             "interp_method": kwargs.get("interp_method", "pchip"),
             "interp_mode": kwargs.get("interp_mode", "default"),
         }
+        
+        if sizing_spec.gmoverid is None:
+          sizing_spec.gmoverid = (array(sizing_spec.gm) / (sizing_spec.ids)).tolist()
         ycols = ["jd", "lch", "vgs", "vds", "vsb", "gmoverid"]
         target = {
             "vgs": (
@@ -364,6 +368,8 @@ class Device:
                 else [sizing_spec.gmoverid]
             ),
         }
+        if target['vgs']==[None]:
+          target.pop('vgs')
         closest_target = self.look_up(ycols, target, return_xy=True, **kwargs)
         sizing = Sizing(lch=closest_target["lch"].values.tolist())
         dcop = DcOp(

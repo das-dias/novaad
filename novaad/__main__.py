@@ -165,9 +165,9 @@ def parse_toml_device_input(input_file: Union[str, Path]) -> dict[str, SpecInput
                 ),
                 device_type=DeviceType(device_data["type"]),
                 sizing_spec=DeviceSizingSpecification(
+                    vgs=[device_data["vgs"]] if "vgs" in device_data else None,
                     vds=[device_data["vds"]],
                     vsb=[device_data["vsb"]],
-                    vgs=[device_data["vgs"]],
                     lch=[device_data["lch"]],
                     gmoverid=[device_data["gmid"]] if "gmid" in device_data else None,
                     gm=[device_data["gm"]] if "gm" in device_data else None,
@@ -660,7 +660,6 @@ def config(args):
         Config.CONFIG_SOURCES = FileSource(file=args["--config"])
     cfg: dict = cfg.model_dump()
     cfg = {k:v for k,v in cfg.items() if v is not None}
-    pprint(cfg)
     return cfg
 
 
