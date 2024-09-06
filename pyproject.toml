@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "novaad"
-version = "0.1.1"
+version = "0.1.2"
 description = "An Analog/Mixed-Signal IC design tool based on the Gm/Id method."
 authors = ["dasdias <das.dias@campus.fct.unl.pt>"]
 license = "BSD-2"
@@ -28,6 +28,7 @@ scipy = "^1.14.1"
 pydantic = "^2.8.2"
 toml = "^0.10.2"
 confz = "^2.0.1"
+tables = "^3.10.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.2"

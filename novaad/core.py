@@ -9,6 +9,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Dict, Tuple, Union, Optional
+from pydantic import AnyUrl
 from enum import Enum, EnumMeta
 
 warnings.simplefilter(action="ignore", category=DeprecationWarning)
@@ -21,7 +22,7 @@ from scipy.spatial.distance import cdist
 from pprint import pprint
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
-from pandas import DataFrame, read_csv, concat, eval
+from pandas import DataFrame, read_csv, concat, eval, read_hdf
 from pandas.core.reshape.util import cartesian_product
 
 # Define an enum for operations
@@ -62,12 +63,14 @@ def parse_expression(expression: str) -> Tuple[str, Optional[str], Optional[Op]]
     return (col1, col2, op)
 
 
-DeviceLutPath = Union[str, Path]
+DeviceLutPath = Union[str, Path, AnyUrl]
 
 
 class DeviceType(BaseEnum):
     NMOS = "nch"
     PMOS = "pch"
+    HVT_NMOS = "hvt_nch"
+    HVT_PMOS = "hvt_pch"
 
 
 @dataclass
@@ -190,7 +193,15 @@ class Device:
         assert device_type in DeviceType, f"Invalid device type: {device_type}"
         self.type = DeviceType(device_type)
         self.path = lut_path
-        self.lut = read_csv(lut_path)
+        fp = Path(str(lut_path))
+        self.lut = None
+        if fp.suffix == ".h5":
+            self.lut = read_hdf(lut_path)
+        elif fp.suffix == ".csv":
+            self.lut = read_csv(lut_path)
+        else:
+            raise ValueError(f"Invalid file format: {fp.suffix}")
+        self.lut = self.lut.abs() # to deal with pmos values as well
         self.bsim4params = None
         self.ref_width = ref_width
         # remove columns with all NaN values
