@@ -9,7 +9,7 @@ def read_readme():
 
 setup(
     name="novaad",
-    version="0.1.2",
+    version="0.1.3",
     description="An Analog/Mixed-Signal IC design tool based on the Gm/Id method.",
     author="dasdias",
     author_email="das.dias@campus.fct.unl.pt",
