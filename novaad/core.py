@@ -69,8 +69,6 @@ DeviceLutPath = Union[str, Path, AnyUrl]
 class DeviceType(BaseEnum):
     NMOS = "nch"
     PMOS = "pch"
-    HVT_NMOS = "hvt_nch"
-    HVT_PMOS = "hvt_pch"
 
 
 @dataclass
@@ -196,7 +194,7 @@ class Device:
         fp = Path(str(lut_path))
         self.lut = None
         if fp.suffix == ".h5":
-            self.lut = read_hdf(lut_path)
+            self.lut = read_hdf(lut_path) # assuming hdf5 file only contains a single high-level key identifier
         elif fp.suffix == ".csv":
             self.lut = read_csv(lut_path)
         else:
