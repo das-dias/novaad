@@ -4,7 +4,7 @@ LUT-based Analog/Mixed-Signal IC Design Tool using Gm/Id Methodology.
 
 Usage:
   novaad (device | moscap | switch ) -i=INPUT_FILE [-o=OUTPUT_FILE] [--noise] [--gui] [--verbose] [--config=CONFIG_FILE]
-  novaad --gui --type=TYPE [--vds=VSB --vsb=VSB --lch-plot LCH_PLOT ...] [--config=CONFIG_FILE]
+  novaad --gui --type=TYPE [--vds=VSB --vsb=VSB --lch-plot LCH_PLOT ...]  [--verbose] [--config=CONFIG_FILE]
   novaad (-h | --help)
   novaad --version
   novaad COMMAND_FILE
@@ -22,7 +22,7 @@ Options:
   --lch-plot                  Channel lengths to include in plot [default: 'all'].
   --noise                     Include noise summary in the analysis.
   --verbose                   Verbose Output.
-  --config=CONFIG_FILE        Configuration file [default: 'cfg.yml'].
+  --config=CONFIG_FILE        Configuration file [default: novaad.cfg.yml].
 """
 
 from docopt import docopt, DocoptExit
@@ -35,7 +35,7 @@ from pprint import pprint
 
 from yaml import safe_load, safe_dump
 from toml import load as toml_load
-from confz import BaseConfig, FileSource, validate_all_configs
+from confz import BaseConfig, FileSource, validate_all_configs, CLArgSource
 from pydantic import AnyUrl, FilePath
 
 from numpy import log10, array
@@ -70,7 +70,6 @@ CFG_PATH = __DEFAULT_CFG_PATH__
 class LutConfig(BaseConfig):
     lut_path: Union[str, AnyUrl, FilePath] # required
     ref_width: float # required
-    bsim4_params_path: Optional[Union[str, AnyUrl, FilePath]] = None
 
 
 class Config(BaseConfig):
@@ -84,6 +83,7 @@ class Config(BaseConfig):
         file_from_env="NOVAAD_ENV",
         file_from_cl="--config",
     )
+    
 
 
 class InstanceConfig(BaseEnum):
@@ -677,11 +677,12 @@ def config(args):
     validate_all_configs()
     cfg: Config = Config()
     if args["--config"]:
-        Config.CONFIG_SOURCES = FileSource(file=args["--config"])
+        new_source = FileSource(file=args["--config"])
+        with Config.change_config_sources(new_source):
+            cfg: Config = Config()
     cfg: dict = cfg.model_dump()
     cfg = {k:v for k,v in cfg.items() if v is not None}
     return cfg
-
 
 def main():
     args = docopt(__doc__, version="novaad 0.1")
