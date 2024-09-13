@@ -13,7 +13,7 @@ from pydantic import AnyUrl
 from enum import Enum, EnumMeta
 
 warnings.simplefilter(action="ignore", category=DeprecationWarning)
-from numpy import ndarray, array, abs, squeeze, linspace
+from numpy import ndarray, array, abs, squeeze, linspace, nan
 from scipy.integrate import quad
 
 # from scipy.interpolate import griddata
@@ -244,7 +244,7 @@ class Device:
         interp_method = kwargs.get("interp_method", "pchip")
         order = kwargs.get("order", 2)
         interp_mode = kwargs.get("interp_mode", "default")  # default, griddata
-        distance_metric = kwargs.get("distance_metric", "euclidean")
+        distance_metric = kwargs.get("distance_metric", "canberra")
         dist_metric_kwargs = kwargs.get("dist_metric_kwargs", {})
         yxcols = list(set(ycols + xcols))
         newdf = self.lut[yxcols]
@@ -277,19 +277,22 @@ class Device:
                     metric=distance_metric,
                     **dist_metric_kwargs,
                 )
-                idx = distances.argpartition(2, axis=1)[:, :2]
-                bot_row = newdf.iloc[idx[:, 0]]
-                top_row = newdf.iloc[idx[:, 1]]
+                
+                idx = distances.argsort(axis=1)[:2] # two nearest rows
+                bot_row = newdf.iloc[idx[:,0]]
+                top_row = newdf.iloc[idx[:,1]]
+                
                 if bot_row.equals(top_row):
                     return bot_row[ycols] if not return_xy else bot_row[yxcols]
                 newdf = DataFrame(columns=newdf.columns)
                 interpolated_idxs = []
+                target_df[xcols] = nan
                 for i in range(len(target_df)):
                     newdf = concat(
                         [
                             newdf,
                             bot_row.iloc[[i]],
-                            target_df.iloc[[i]],
+                            target_df[xcols],
                             top_row.iloc[[i]],
                         ]
                     )
@@ -353,7 +356,7 @@ class Device:
         
         if sizing_spec.gmoverid is None:
           sizing_spec.gmoverid = (array(sizing_spec.gm) / (sizing_spec.ids)).tolist()
-        ycols = ["jd", "lch", "vgs", "vds", "vsb", "gmoverid"]
+        ycols = ["jd", "lch", "vgs", "vds", "vsb", "gmoverid", "av", "ft"]
         target = {
             "vgs": sizing_spec.vgs,
             "vds": sizing_spec.vds,
@@ -398,7 +401,7 @@ class Device:
             "interp_method": kwargs.get("interp_method", "pchip"),
             "interp_mode": kwargs.get("interp_mode", "default"),
         }
-        ycols = ["jd", "gm", "gds", "cgg", "cgs", "cgd", "cdb", "csb", "ft", "av"]
+        ycols = ["jd", "gm", "gds", "cgg", "cgs", "cgd", "cdb", "csb", "ft", "av", "lch"]
         target = {
             "vgs": dcop.vgs,
             "vds": dcop.vds,
@@ -406,9 +409,8 @@ class Device:
             "lch": sizing.lch,
             "jd": target_jd.tolist(),
         }
-
+        
         reference_electric_model = self.look_up(ycols, target, **kwargs)
-
         electric_model = ElectricModel()
         for col in [
             col
@@ -416,9 +418,7 @@ class Device:
             if col in reference_electric_model.columns
         ]:
             electric_model.__setattr__(col, reference_electric_model[col].values)
-            if col.startswith("c") or col.startswith(
-                "g"
-            ):  # capacitances or conductances
+            if col.startswith("c") or col.startswith("g"):  # capacitances or conductances
                 electric_model.__setattr__(
                     col, electric_model.__getattribute__(col) * wch_ratio
                 )
