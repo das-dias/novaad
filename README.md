@@ -76,8 +76,8 @@ print(row)
 """ row ( as Pandas.DataFrame )
 Output: 
 
-       jd           lch            ft  gmoverid  vgs  vsb  vds       av
-1  8.0358  1.800000e-07  2.770000e+09      10.0  0.9  0.0  0.9  175.469
+            lch  gmoverid  vgs       jd  vsb            ft       av  vds
+1  1.800000e-07     8.909  0.7  35.1764  0.0  2.680000e+10  38.6127  0.9
 """
 
 # Perform a Gm/Id sizing operation for a given device:
@@ -90,9 +90,11 @@ print(sizing.to_df())
 """ sizing ( as Pandas.DataFrame )
 Output:
             lch       wch
-0  1.800000e-07  0.000013
+0  1.800000e-07  0.000004
 """
 ```
+
+It is important to note that during lookup, and contrary to ```gmoverid```, ```vgs``` is not prioritized as a target. Vgs should be chosen accordingly to the level of inversion we want for our device. As such, upon computing the closest rows and performing interpolation (the two main operations behind interpolating look up) might lead to a slightly different DC Operating Point in order to achieve the targetted Gm/Id spec along with the VDS, Lch and VSB simultaneously.
 
 This API effectively enables the user to fit the tool into an optimization loop to perform automatic sizing of whole circuits like OTA's, filters, buffers, etc.
 

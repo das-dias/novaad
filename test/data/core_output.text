@@ -29,46 +29,44 @@ DcOp(vgs=0.5, vds=0.6, vsb=0.0, ids=0.001)
 0  0.9  0.95  0.0
 test_device_look_up()
 
-{'gmoverid': [10.0],
- 'lch': [np.float64(1.8e-07)],
- 'vds': [0.9],
- 'vgs': [np.float64(0.9)],
- 'vsb': [0.0]}
+{'gmoverid': [10.0], 'lch': [1.8e-07], 'vds': [0.9], 'vgs': [0.9], 'vsb': [0.0]}
 Interpolating...
 Default:
 Nearest:
-   vsb      jd  gmoverid            ft  vds  vgs       av           lch
-1  0.0  8.0358      10.0  2.770000e+09  0.9  0.9  175.469  1.800000e-07
+   vsb            ft  gmoverid           lch       jd  vds       av  vgs
+1  0.0  2.680000e+10     8.909  1.800000e-07  35.1764  0.9  38.6127  0.7
 Linear:
-   vsb       jd  gmoverid            ft  vds  vgs        av           lch
-1  0.0  7.80515      10.0  2.600000e+09  0.9  0.9  181.3495  1.800000e-07
+   vsb            ft  gmoverid           lch        jd  vds       av    vgs
+1  0.0  2.400000e+10   10.1814  1.800000e-07  28.19065  0.9  40.5005  0.675
 PCHIP:
-   vsb       jd  gmoverid            ft  vds  vgs        av           lch
-1  0.0  7.80515      10.0  2.600000e+09  0.9  0.9  181.3495  1.800000e-07
-   vsb          jd  gmoverid            ft  vds  vgs          av           lch
-1  0.0    7.928523      10.0  2.472500e+09  0.9  0.9  185.759875  1.800000e-07
-4  0.0    1.931135      20.0  4.575000e+09  0.9  0.9   53.595268  1.800000e-07
-7  0.0  371.608500       1.0  4.095606e+10  0.9  0.9   10.891525  1.800000e-07
+   vsb            ft  gmoverid           lch        jd  vds       av    vgs
+1  0.0  2.400000e+10   10.1814  1.800000e-07  28.19065  0.9  40.5005  0.675
+   vsb            ft   gmoverid  ...  vds         av       vgs
+1  0.0  2.650655e+10   9.037209  ...  0.9  38.858648  0.697396
+4  0.0  2.120000e+10  11.453800  ...  0.9  42.388300  0.650000
+7  0.0  5.784884e+09  19.823210  ...  0.9  47.204847  0.509637
+
+[3 rows x 8 columns]
 test_device_sizing()
 
    vds  vsb           lch  vgs  gmoverid     gm
 0  0.6  0.0  1.800000e-07  0.5      10.0  0.001
             lch       wch
-0  1.800000e-07  0.000013
+0  1.800000e-07  0.000004
    vds  vsb           lch  vgs  gmoverid     gm
 0  0.6  0.0  1.800000e-07  0.5      24.0  0.001
             lch       wch
-0  1.800000e-07  0.000248
+0  1.800000e-07  0.000041
 test_device_electric_model()
 
    vds  vsb           lch  vgs  gmoverid    ids
 0  0.6  0.0  1.800000e-07  0.5      16.0  0.001
-   vgs  vds  vsb    ids
-0  0.5  0.6  0.0  0.001
-            lch      wch
-0  1.800000e-07  0.00035
-       jd       gm       gds  ...           csb            ft       av
-0  2.8607  0.01601  0.000121  ...  5.995036e-14  2.140000e+09  133.631
+     vgs  vds  vsb    ids
+0  0.525  0.6  0.0  0.001
+            lch       wch
+0  1.800000e-07  0.000331
+       jd        gm      gds  ...           csb            ft        av
+0  4.3892  0.025905  0.00061  ...  2.547476e-14  8.100000e+09  42.58145
 
 [1 rows x 10 columns]
 test_device_wave_vs_wave()

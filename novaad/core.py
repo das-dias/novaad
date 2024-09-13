@@ -278,7 +278,7 @@ class Device:
                     **dist_metric_kwargs,
                 )
                 
-                idx = distances.argsort(axis=1)[:2] # two nearest rows
+                idx = distances.argsort(axis=1)[:,:2] # two nearest rows
                 bot_row = newdf.iloc[idx[:,0]]
                 top_row = newdf.iloc[idx[:,1]]
                 
@@ -298,7 +298,7 @@ class Device:
                     )
                     interpolated_idxs.append(i * 3 + 1)
                 newdf = newdf.reset_index()
-                newdf = newdf.drop(columns=["index"])
+                newdf = newdf.drop(columns=["index"]).astype(float)
                 newdf = newdf.interpolate(method=interp_method, order=order)
                 newdf = newdf.iloc[interpolated_idxs]
                 return newdf[yxcols] if return_xy else newdf[ycols]
@@ -326,7 +326,7 @@ class Device:
         """
         default_sizing = DeviceSizingSpecification(
             vds=self.lut["vds"].mean(),
-            vsb=self.lut["vds"].min(),
+            vsb=self.lut["vsb"].min(),
             lch=self.lut["lch"].min(),
             gmoverid=self.lut["gmoverid"].mean(),
             gm=1e-3,
