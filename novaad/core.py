@@ -356,7 +356,7 @@ class Device:
         
         if sizing_spec.gmoverid is None:
           sizing_spec.gmoverid = (array(sizing_spec.gm) / (sizing_spec.ids)).tolist()
-        ycols = ["jd", "lch", "vgs", "vds", "vsb", "gmoverid", "av", "ft"]
+        ycols = ["jd", "lch", "vgs", "vds", "vsb", "gmoverid"]
         target = {
             "vgs": sizing_spec.vgs,
             "vds": sizing_spec.vds,
