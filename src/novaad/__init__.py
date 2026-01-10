@@ -1,4 +1,4 @@
-from .core import (
+from novaad.core import (
     Device,
     Moscap,
     Switch,
@@ -11,7 +11,7 @@ from .core import (
     BaseEnum,
     DeviceType,
 )
-from .gui import GuiApp
+from novaad.gui import GuiApp
 
 __all__ = [
     "Device",

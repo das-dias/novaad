@@ -1,45 +1,25 @@
-[tool.poetry]
+[project]
 name = "novaad"
-version = "0.1.6"
-description = "An Analog/Mixed-Signal IC design tool based on the Gm/Id method."
-authors = ["dasdias <das.dias@campus.fct.unl.pt>"]
-license = "BSD-2"
+version = "0.1.0"
+description = "Add your description here"
 readme = "README.md"
-keywords = ["analog", "mixed-signal", "ic", "design", "gm/id", "eda-cad"]
-
-# Specify files or directories to include in the distribution
-include = [
-  "README.md",            # Include the README file
-  "LICENSE",              # Include the LICENSE file
-  "novaad/*.yaml",        # Include all YAML files in the config directory
-  "novaad/*.yml",         # Include all YAML files in the root directory
-  "docs/**",              # Include all files in the docs directory
-  "tests/**"         # Include all files in the tests/data directory
+authors = [
+    { name = "dasdias", email = "das.dias6@gmail.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "confz>=2.1.0",
+    "docopt>=0.6.2",
+    "numpy>=2.2.6",
+    "pandas>=2.3.3",
+    "pip>=25.3",
+    "plotly>=6.5.1",
+    "pydantic>=2.12.5",
+    "pyyaml>=6.0.3",
+    "scipy>=1.15.3",
+    "toml>=0.10.2",
 ]
 
-[tool.poetry.dependencies]
-python = "^3.11"
-pandas = "^2.2.2"
-numpy = "^2.1.0"
-PyYAML = "^6.0.2"
-plotly = "^5.24.0"
-docopt = "^0.6.2"
-scipy = "^1.14.1"
-pydantic = "^2.8.2"
-toml = "^0.10.2"
-confz = "^2.0.1"
-tables = "^3.10.1"
-
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.3.2"
-pytest-benchmark = "^4.0.0"
-poetry-setup = "^0.3.6"
-poetry = "^1.8.3"
-pytest-coverage = "^0.0"
-
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
-
-[tool.poetry.scripts]
-novaad = 'novaad.__main__:main'
+requires = ["hatchling"]
+build-backend = "hatchling.build"
