@@ -1,0 +1,101 @@
+syntax = "proto3";
+
+package novaad;
+
+// One row of a device LUT. Field names match the CSV headers read by core.Device
+// (see test/data/test_nch_lut_renamed.csv). Values are abs()'d on load, so pch rows are stored positive.
+message DeviceLutEntry {
+  // sweep / bias axes
+  double vgs = 1;
+  double vds = 2;
+  double vsb = 3;
+  double lch = 4;
+  // extracted small-signal parameters
+  double ids = 5;
+  double gm = 6;
+  double gds = 7;
+  double gmoverid = 8;
+  double jd = 9; // ids / ref_width
+  double ft = 10;
+  double av = 11;
+  double ron = 12;
+  double cgg = 13;
+  double cgs = 14;
+  double cgd = 15;
+  double cdb = 16;
+  double csb = 17;
+  double fom_bw = 18;
+}
+
+message Lut {
+  repeated DeviceLutEntry entries = 1;
+}
+
+enum DeviceType {
+  DEVICE_TYPE_UNSPECIFIED = 0;
+  NCH = 1; // nmos
+  PCH = 2; // pmos
+}
+
+message CmosDevice {
+  DeviceType type = 1;
+  double ref_width = 2; // width the LUT was characterized at
+  oneof lut_source {
+    string lut_path = 3; // .csv / .h5 path or URL
+    Lut lut = 4;         // inline LUT
+  }
+}
+
+// core.py dataclasses accept float | list[float]; repeated covers both (scalar = 1 element).
+message Sizing {
+  repeated double lch = 1;
+  repeated double wch = 2;
+}
+
+message DcOp {
+  repeated double vgs = 1;
+  repeated double vds = 2;
+  repeated double vsb = 3;
+  repeated double ids = 4;
+}
+
+message DeviceSizingSpecification {
+  repeated double vds = 1;
+  repeated double vsb = 2;
+  repeated double lch = 3;
+  repeated double vgs = 4;
+  repeated double gmoverid = 5;
+  repeated double ids = 6;
+  repeated double gm = 7;
+}
+
+message MoscapSizingSpecification {
+  repeated double vgs = 1;
+  repeated double vsb = 2;
+  repeated double lch = 3;
+  repeated double cgg = 4;
+  repeated double vds = 5;
+}
+
+message SwitchSizingSpecification {
+  repeated double vgs = 1;
+  repeated double vsb = 2;
+  repeated double lch = 3;
+  repeated double ron = 4;
+  repeated double vds = 5;
+}
+
+message ElectricModel {
+  repeated double jd = 1;
+  repeated double ids = 2;
+  repeated double gm = 3;
+  repeated double gds = 4;
+  repeated double cgg = 5;
+  repeated double cgs = 6;
+  repeated double cgd = 7;
+  repeated double cdb = 8;
+  repeated double csb = 9;
+  repeated double ft = 10;
+  repeated double av = 11;
+  repeated double ron = 12;
+}
