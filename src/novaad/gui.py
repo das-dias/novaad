@@ -1,11 +1,39 @@
 # plotting and user control
-from plotly.subplots import make_subplots
-import plotly.graph_objects as go
+from pathlib import Path
+from tempfile import gettempdir
 from warnings import warn
+from itertools import cycle
+from bokeh.plotting import figure, show, output_file
+from bokeh.layouts import gridplot, column
+from bokeh.models import ColumnDataSource, DataTable, TableColumn, Div, CrosshairTool, Span
 from pandas import DataFrame, merge, concat
 from numpy import log10, ceil
-from itertools import cycle
-from novaad import Device
+from novaad import Device, cgui
+
+# (title, x, y, x_label, y_label, x_log, y_log)
+GRAPHS = [
+    ("Gm/Id vs Vgs", "vgs", "gmoverid", "Vgs [V]", "Gm/Id [1/V]", False, False),
+    ("Gm/Id vs Jd", "jd", "gmoverid", "Jd [A/m]", "Gm/Id [1/V]", True, False),
+    ("Ft vs Jd", "jd", "ft", "Jd [A/m]", "Ft [Hz]", True, True),
+    ("Av vs Gm/Id", "gmoverid", "av_db", "Gm/Id [1/V]", "Av [dB]", False, False),
+    ("Fom Av*Bw vs Jd", "jd", "ft*av", "Jd [A/m]", "Ft*Av [Hz]", True, True),
+    ("Fom Noise*Bw vs Jd", "jd", "ft*gmoverid", "Jd [A/m]", "Ft*Gm/Id [Hz]", True, True),
+    ("Cgg, vs Vgs", "vgs", "cgg_fF", "Vgs [V]", "Cgg [fF]", False, False),
+    ("Cgs vs Vgs", "vgs", "cgs_fF", "Vgs [V]", "Cgs [fF]", False, False),
+    ("Cgd vs Vgs", "vgs", "cgd_fF", "Vgs [V]", "Cgd [fF]", False, False),
+    ("Ron vs Vgs", "vgs", "ron", "Vgs [V]", "Ron [Ω]", False, True),
+]
+LEGEND_GRAPH = "Fom Noise*Bw vs Jd"
+
+
+def _table(df: DataFrame) -> DataTable:
+    return DataTable(
+        source=ColumnDataSource(df),
+        columns=[TableColumn(field=c, title=c) for c in df.columns],
+        index_position=None,
+        sizing_mode="stretch_width",
+        height=30 + 25 * len(df),
+    )
 
 
 class GuiApp:
@@ -14,18 +42,6 @@ class GuiApp:
 
     def show_results_table(self, results: DataFrame, **kwargs):
         title = kwargs.get("title", "Device Results Table")
-        table_fig = make_subplots(
-            rows=3,
-            cols=1,
-            subplot_titles=("DC-OP", "Sizing", "Electric Model"),
-            vertical_spacing=0.03,
-            specs=[
-                [{"type": "table"}],
-                [{"type": "table"}],
-                [{"type": "table"}],
-            ],
-        )
-
         dcop_df = DataFrame(
             data={
                 "ID": results["id"],
@@ -97,46 +113,23 @@ class GuiApp:
             }
         )
 
-        table_fig.add_trace(
-            go.Table(
-                header=dict(values=dcop_df.columns),
-                cells=dict(values=[dcop_df[k].tolist() for k in dcop_df.columns]),
-            ),
-            row=1,
-            col=1,
+        output_file(Path(gettempdir()) / "novaad_results.html", title=title)
+        show(
+            column(
+                Div(text=f"<h2>{title}</h2>"),
+                Div(text="<h3>DC-OP</h3>"),
+                _table(dcop_df),
+                Div(text="<h3>Sizing</h3>"),
+                _table(sizing_df),
+                Div(text="<h3>Electric Model</h3>"),
+                _table(electric_model_df),
+                sizing_mode="stretch_width",
+            )
         )
-        table_fig.add_trace(
-            go.Table(
-                header=dict(values=sizing_df.columns),
-                cells=dict(values=[sizing_df[k].tolist() for k in sizing_df.columns]),
-            ),
-            row=2,
-            col=1,
-        )
-        table_fig.add_trace(
-            go.Table(
-                header=dict(values=electric_model_df.columns),
-                cells=dict(
-                    values=[
-                        electric_model_df[k].tolist() for k in electric_model_df.columns
-                    ]
-                ),
-            ),
-            row=3,
-            col=1,
-        )
-
-        table_fig.update_layout(
-            title=title,
-            font=dict(family="Arial, sans-serif", size=14, color="black"),
-        )
-
-        table_fig.show()
 
     def show_device_graphs(self, args, **kwargs):
         tol = kwargs.get("tol", 1e-2)
         lch_tol = kwargs.get("lch-tol", 1e-9)
-        verbose = kwargs.get("verbose", 0)
 
         device_type = args["--type"]
         assert device_type in [
@@ -144,11 +137,12 @@ class GuiApp:
             "pch",
         ], "Invalid device type. Must be 'nch' or 'pch'."
         
-        self.device = Device(
-            lut_path=self.config[device_type]["lut_path"],
-            device_type=device_type,
-            ref_width=float(self.config[device_type]["ref_width"]),
-        )
+        with cgui.status(f"Loading {device_type} LUT..."):
+            self.device = Device(
+                lut_path=self.config[device_type]["lut_path"],
+                device_type=device_type,
+                ref_width=float(self.config[device_type]["ref_width"]),
+            )
 
         target_lch = (
             [float(l) for l in args["LCH_PLOT"]] if args["--lch-plot"] else ["all"]
@@ -176,32 +170,9 @@ class GuiApp:
                 (self.device.lut["vsb"] - vsb).abs().argsort()[0]
             ]
 
-        layout = go.Layout(
-            title=f"Gm/Id Method @ Vds={vds:.2f}V Vsb={vsb:.2f}V ({device_type.upper()})",
-            font=dict(family="Arial, sans-serif", size=14, color="black"),
-            height=1200,
-        )
-        plot_df = DataFrame(
-            columns=[
-                "vgs",
-                "gmoverid",
-                "jd",
-                "ft",
-                "av",
-                "ft*av",
-                "ft*gmoverid",
-                "cgg",
-                "cgs",
-                "cgd",
-                "ron",
-                "lch",
-            ]
-        )
+        frames = []
 
-        for l in target_lch:
-            if verbose > 0:
-                print(f"Processing lch={l}...")
-
+        for l in cgui.progress(target_lch, description="Extracting curves..."):
             lch = int(ceil(l / 1e-9))
             query = f"abs(vds-{vds})<={tol} & abs(vsb-{vsb})<={tol}"
             query = f"abs(lch-{l})<={lch_tol} & {query}"
@@ -230,35 +201,14 @@ class GuiApp:
             aux_df = merge(aux_df, ron_vs_vgs)
             aux_df["lch"] = str(lch) + " nm"
 
-            plot_df = concat([plot_df, aux_df])
+            frames.append(aux_df)
 
-            plot_df["jd_log"] = log10(plot_df["jd"])
-            plot_df["av_db"] = 20 * log10(plot_df["av"])
-            plot_df["ft_log"] = log10(plot_df["ft"])
-            plot_df["ft*av_log"] = log10(plot_df["ft*av"])
-            plot_df["ft*gmoverid_log"] = log10(plot_df["ft*gmoverid"])
-            plot_df["cgg_fF"] = plot_df["cgg"] / 1e-15
-            plot_df["cgs_fF"] = plot_df["cgs"] / 1e-15
-            plot_df["cgd_fF"] = plot_df["cgd"] / 1e-15
-            plot_df["ron_log"] = log10(plot_df["ron"])
+        plot_df = concat(frames)
+        plot_df["av_db"] = 20 * log10(plot_df["av"])
+        plot_df["cgg_fF"] = plot_df["cgg"] / 1e-15
+        plot_df["cgs_fF"] = plot_df["cgs"] / 1e-15
+        plot_df["cgd_fF"] = plot_df["cgd"] / 1e-15
 
-        fig = make_subplots(
-            rows=5,
-            cols=2,
-            subplot_titles=(
-                "Gm/Id vs Vgs",
-                "Gm/Id vs Jd",
-                "Ft vs Jd",
-                "Av vs Gm/Id",
-                "Fom Av*Bw vs Jd",
-                "Fom Noise*Bw vs Jd",
-                "Cgg, vs Vgs",
-                "Cgs vs Vgs",
-                "Cgd vs Vgs",
-                "Ron vs Vgs",
-            ),
-            vertical_spacing=0.1,
-        )
         colors = [
             "#000000",
             "#E69F00",
@@ -280,306 +230,52 @@ class GuiApp:
         colors = cycle(colors)
         color_map = {k: next(colors) for k in plot_df["lch"].unique()}
 
+        x_ranges = {}  # graphs with the same x variable share zoom/pan
+        vspans = {}  # ... and the vertical crosshair line
+        figs = {}
+        for title, x, y, x_label, y_label, x_log, y_log in GRAPHS:
+            p = figure(
+                title=title,
+                x_axis_type="log" if x_log else "linear",
+                y_axis_type="log" if y_log else "linear",
+                x_axis_label=x_label,
+                y_axis_label=y_label,
+                output_backend="webgl",
+                tooltips=[("Lch", "@lch"), (x_label, "$x"), (y_label, "$y")],
+                width=600,
+                height=240,
+            )
+            if x in x_ranges:
+                p.x_range = x_ranges[x]
+            x_ranges.setdefault(x, p.x_range)
+            vspan = Span(dimension="height", line_dash="dashed")
+            hspan = Span(dimension="width", line_dash="dashed")
+            p.add_tools(CrosshairTool(overlay=(vspan, hspan)))
+            for other in vspans.setdefault(x, []):
+                vspan.js_link("location", other, "location")
+                other.js_link("location", vspan, "location")
+            vspans[x].append(vspan)
+            figs[title] = p
+
         for lch in plot_df["lch"].unique():
-            lch_df = plot_df[plot_df["lch"] == lch]
-            fig.add_trace(
-                go.Scattergl(
-                    x=lch_df["vgs"],
-                    y=lch_df["gmoverid"],
-                    mode="lines",
-                    marker=dict(color=color_map[lch]),
-                    name=lch,
-                    showlegend=False,
-                ),
-                row=1,
-                col=1,
-            )
-            fig.add_trace(
-                go.Scattergl(
-                    x=lch_df["jd_log"],
-                    y=lch_df["gmoverid"],
-                    mode="lines",
-                    marker=dict(color=color_map[lch]),
-                    name=lch,
-                    showlegend=False,
-                ),
-                row=1,
-                col=2,
-            )
-            fig.add_trace(
-                go.Scattergl(
-                    x=lch_df["jd_log"],
-                    y=lch_df["ft_log"],
-                    mode="lines",
-                    marker=dict(color=color_map[lch]),
-                    name=lch,
-                    showlegend=False,
-                ),
-                row=2,
-                col=1,
-            )
-            fig.add_trace(
-                go.Scattergl(
-                    x=lch_df["gmoverid"],
-                    y=lch_df["av_db"],
-                    mode="lines",
-                    marker=dict(color=color_map[lch]),
-                    name=lch,
-                    showlegend=False,
-                ),
-                row=2,
-                col=2,
-            )
-            fig.add_trace(
-                go.Scattergl(
-                    x=lch_df["jd_log"],
-                    y=lch_df["ft*av_log"],
-                    mode="lines",
-                    marker=dict(color=color_map[lch]),
-                    name=lch,
-                    showlegend=False,
-                ),
-                row=3,
-                col=1,
-            )
-            fig.add_trace(
-                go.Scattergl(
-                    x=lch_df["jd_log"],
-                    y=lch_df["ft*gmoverid_log"],
-                    mode="lines",
-                    marker=dict(color=color_map[lch]),
-                    name=lch,
-                    showlegend=True,
-                ),
-                row=3,
-                col=2,
-            )
-            fig.add_trace(
-                go.Scattergl(
-                    x=lch_df["vgs"],
-                    y=lch_df["cgg_fF"],
-                    mode="lines",
-                    marker=dict(color=color_map[lch]),
-                    name=lch,
-                    showlegend=False,
-                ),
-                row=4,
-                col=1,
-            )
-            fig.add_trace(
-                go.Scattergl(
-                    x=lch_df["vgs"],
-                    y=lch_df["cgs_fF"],
-                    mode="lines",
-                    marker=dict(color=color_map[lch]),
-                    name=lch,
-                    showlegend=False,
-                ),
-                row=4,
-                col=2,
-            )
-            fig.add_trace(
-                go.Scattergl(
-                    x=lch_df["vgs"],
-                    y=lch_df["cgd_fF"],
-                    mode="lines",
-                    marker=dict(color=color_map[lch]),
-                    name=lch,
-                    showlegend=False,
-                ),
-                row=5,
-                col=1,
-            )
-            fig.add_trace(
-                go.Scattergl(
-                    x=lch_df["vgs"],
-                    y=lch_df["ron_log"],
-                    mode="lines",
-                    marker=dict(color=color_map[lch]),
-                    name=lch,
-                    showlegend=False,
-                ),
-                row=5,
-                col=2,
-            )
+            src = ColumnDataSource(plot_df[plot_df["lch"] == lch])
+            renderers = {}
+            for title, x, y, *_ in GRAPHS:
+                kw = {"legend_label": lch} if title == LEGEND_GRAPH else {}
+                renderers[title] = figs[title].line(
+                    x, y, source=src, color=color_map[lch], **kw
+                )
+            # legend click hides this lch in every graph, like plotly's global legend
+            for title, r in renderers.items():
+                if title != LEGEND_GRAPH:
+                    renderers[LEGEND_GRAPH].js_link("visible", r, "visible")
+        figs[LEGEND_GRAPH].legend.click_policy = "hide"
 
-        superscript_map = {
-            "0": "⁰",
-            "1": "¹",
-            "2": "²",
-            "3": "³",
-            "4": "⁴",
-            "5": "⁵",
-            "6": "⁶",
-            "7": "⁷",
-            "8": "⁸",
-            "9": "⁹",
-            "a": "ᵃ",
-            "b": "ᵇ",
-            "c": "ᶜ",
-            "d": "ᵈ",
-            "e": "ᵉ",
-            "f": "ᶠ",
-            "g": "ᵍ",
-            "h": "ʰ",
-            "i": "ᶦ",
-            "j": "ʲ",
-            "k": "ᵏ",
-            "l": "ˡ",
-            "m": "ᵐ",
-            "n": "ⁿ",
-            "o": "ᵒ",
-            "p": "ᵖ",
-            "q": "۹",
-            "r": "ʳ",
-            "s": "ˢ",
-            "t": "ᵗ",
-            "u": "ᵘ",
-            "v": "ᵛ",
-            "w": "ʷ",
-            "x": "ˣ",
-            "y": "ʸ",
-            "z": "ᶻ",
-            "A": "ᴬ",
-            "B": "ᴮ",
-            "C": "ᶜ",
-            "D": "ᴰ",
-            "E": "ᴱ",
-            "F": "ᶠ",
-            "G": "ᴳ",
-            "H": "ᴴ",
-            "I": "ᴵ",
-            "J": "ᴶ",
-            "K": "ᴷ",
-            "L": "ᴸ",
-            "M": "ᴹ",
-            "N": "ᴺ",
-            "O": "ᴼ",
-            "P": "ᴾ",
-            "Q": "Q",
-            "R": "ᴿ",
-            "S": "ˢ",
-            "T": "ᵀ",
-            "U": "ᵁ",
-            "V": "ⱽ",
-            "W": "ᵂ",
-            "X": "ˣ",
-            "Y": "ʸ",
-            "Z": "ᶻ",
-            "+": "⁺",
-            "-": "⁻",
-            "=": "⁼",
-            "(": "⁽",
-            ")": "⁾",
-        }
-
-        def int_to_super(n: int):
-            return "".join([superscript_map[c] for c in str(n)])
-
-        jd_tick_vals = [
-            val for val in set([int(v) for v in plot_df["jd_log"].to_numpy()])
-        ]
-        jd_tick_text = [f"10{int_to_super(int(val))}" for val in jd_tick_vals]
-
-        ft_tick_vals = [
-            val for val in set([int(v) for v in plot_df["ft_log"].to_numpy()])
-        ]
-        ft_tick_text = [f"10{int_to_super(int(val))}" for val in ft_tick_vals]
-
-        ftav_tick_vals = [
-            val for val in set([int(v) for v in plot_df["ft*av_log"].to_numpy()])
-        ]
-        ftav_tick_text = [f"10{int_to_super(int(val))}" for val in ftav_tick_vals]
-
-        ftgmoverid_tick_vals = [
-            val for val in set([int(v) for v in plot_df["ft*gmoverid_log"].to_numpy()])
-        ]
-        ftgmoverid_tick_text = [
-            f"10{int_to_super(int(val))}" for val in ftgmoverid_tick_vals
-        ]
-
-        ron_tick_vals = [
-            val for val in set([int(v) for v in plot_df["ron_log"].to_numpy()])
-        ]
-        ron_tick_text = [f"10{int_to_super(int(val))}" for val in ron_tick_vals]
-
-        fig.update_xaxes(title_text="Vgs [V]", row=1, col=1)
-        fig.update_yaxes(title_text="Gm/Id [1/V]", row=1, col=1)
-
-        fig.update_xaxes(
-            title_text="Jd [A/m]",
-            tickvals=jd_tick_vals,
-            ticktext=jd_tick_text,
-            row=1,
-            col=2,
+        title = f"Gm/Id Method @ Vds={vds:.2f}V Vsb={vsb:.2f}V ({device_type.upper()})"
+        output_file(Path(gettempdir()) / "novaad_graphs.html", title=title)
+        show(
+            column(
+                Div(text=f"<h2>{title}</h2>"),
+                gridplot(list(figs.values()), ncols=2),
+            )
         )
-        fig.update_yaxes(title_text="Gm/Id [1/V]", row=1, col=2)
-
-        fig.update_xaxes(
-            title_text="Jd [A/m]",
-            tickvals=jd_tick_vals,
-            ticktext=jd_tick_text,
-            row=2,
-            col=1,
-        )
-        fig.update_yaxes(
-            title_text="Ft [Hz]",
-            tickvals=ft_tick_vals,
-            ticktext=ft_tick_text,
-            row=2,
-            col=1,
-        )
-
-        fig.update_xaxes(title_text="Gm/Id [1/V]", row=2, col=2)
-        fig.update_yaxes(title_text="Av [dB]", row=2, col=2)
-
-        fig.update_xaxes(
-            title_text="Jd [A/m]",
-            tickvals=jd_tick_vals,
-            ticktext=jd_tick_text,
-            row=3,
-            col=1,
-        )
-        fig.update_yaxes(
-            title_text="Ft*Av [Hz]",
-            tickvals=ftav_tick_vals,
-            ticktext=ftav_tick_text,
-            row=3,
-            col=1,
-        )
-
-        fig.update_xaxes(
-            title_text="Jd [A/m]",
-            tickvals=jd_tick_vals,
-            ticktext=jd_tick_text,
-            row=3,
-            col=2,
-        )
-        fig.update_yaxes(
-            title_text="Ft*Gm/Id [Hz]",
-            tickvals=ftgmoverid_tick_vals,
-            ticktext=ftgmoverid_tick_text,
-            row=3,
-            col=2,
-        )
-
-        fig.update_xaxes(title_text="Vgs [V]", row=4, col=1)
-        fig.update_yaxes(title_text="Cgg [fF]", row=4, col=1)
-
-        fig.update_xaxes(title_text="Vgs [V]", row=4, col=2)
-        fig.update_yaxes(title_text="Cgs [fF]", row=4, col=2)
-
-        fig.update_xaxes(title_text="Vgs [V]", row=5, col=1)
-        fig.update_yaxes(title_text="Cgd [fF]", row=5, col=1)
-
-        fig.update_xaxes(title_text="Vgs [V]", row=5, col=2)
-        fig.update_yaxes(
-            title_text="Ron [Ω]",
-            tickvals=ron_tick_vals,
-            ticktext=ron_tick_text,
-            row=5,
-            col=2,
-        )
-
-        fig.update_layout(layout)
-        fig.show()

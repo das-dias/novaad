@@ -22,7 +22,7 @@ Options:
   --lch-plot                  Channel lengths to include in plot [default: 'all'].
   --noise                     Include noise summary in the analysis.
   --verbose                   Verbose Output.
-  --config=CONFIG_FILE        Configuration file [default: novaad.cfg.yml].
+  --config=CONFIG_FILE        pyproject.toml with a [tool.novaad] section [default: pyproject.toml].
 """
 
 from docopt import docopt, DocoptExit
@@ -31,16 +31,14 @@ from warnings import warn
 from typing import Union ,Optional
 from dataclasses import dataclass
 from pathlib import Path
-from pprint import pprint
 
-from yaml import safe_load, safe_dump
 from toml import load as toml_load
-from confz import BaseConfig, FileSource, validate_all_configs, CLArgSource
-from pydantic import AnyUrl, FilePath
+from pydantic import BaseModel, AnyUrl, FilePath
 
 from numpy import log10, array
 from pandas import DataFrame, concat
 
+from novaad import cgui
 from novaad import (
     Device,
     Moscap,
@@ -56,34 +54,16 @@ from novaad import (
     DeviceType,
 )
 
-"""
-global __REF_CWD__
-__REF_CWD__ = str(Path(__file__).resolve().cwd())
 
-global __DEFAULT_CFG_PATH__
-__DEFAULT_CFG_PATH__ = str(Path(__REF_CWD__ + "/cfg.yml").resolve())
-
-global CFG_PATH
-CFG_PATH = __DEFAULT_CFG_PATH__
-"""
-
-class LutConfig(BaseConfig):
+class LutConfig(BaseModel):
     lut_path: Union[str, AnyUrl, FilePath] # required
     ref_width: float # required
 
 
-class Config(BaseConfig):
+class Config(BaseModel):
     nch: Optional[LutConfig] = None
     pch: Optional[LutConfig] = None
     out_log_path: Optional[Union[FilePath, AnyUrl, str]] = None
-
-    CONFIG_SOURCES = FileSource(
-        folder=str(Path(__file__).resolve().cwd()),
-        file="novaad.cfg.yml",
-        file_from_env="NOVAAD_ENV",
-        file_from_cl="--config",
-    )
-    
 
 
 class InstanceConfig(BaseEnum):
@@ -226,12 +206,13 @@ def get_device_instance_results(
     ]
 
     for device_type in device_types:
-        devices[device_type] = Device(
-            lut_path=config[device_type]["lut_path"],
-            device_type=DeviceType(device_type),
-            ref_width=float(config[device_type]["ref_width"]),
-        )
-    for id in spec_input:
+        with cgui.status(f"Loading {device_type} LUT..."):
+            devices[device_type] = Device(
+                lut_path=config[device_type]["lut_path"],
+                device_type=DeviceType(device_type),
+                ref_width=float(config[device_type]["ref_width"]),
+            )
+    for id in cgui.progress(spec_input, description="Sizing instances..."):
         spec = spec_input[id]
         if spec.device_type.value not in devices:
             warn(f"No configuration found for {spec.device_type.value}.")
@@ -371,13 +352,14 @@ def get_moscap_instance_results(
     ]
 
     for device_type in device_types:
-        devices[device_type] = Moscap(
-            lut_path=config[device_type]["lut_path"],
-            device_type=DeviceType(device_type),
-            ref_width=float(config[device_type]["ref_width"]),
-        )
+        with cgui.status(f"Loading {device_type} LUT..."):
+            devices[device_type] = Moscap(
+                lut_path=config[device_type]["lut_path"],
+                device_type=DeviceType(device_type),
+                ref_width=float(config[device_type]["ref_width"]),
+            )
 
-    for id in spec_input:
+    for id in cgui.progress(spec_input, description="Sizing instances..."):
         spec = spec_input[id]
         if spec.device_type.value not in devices:
             warn(f"No configuration found for {spec.device_type.value}.")
@@ -496,13 +478,14 @@ def get_switch_instance_results(
         dt for dt in ["nch", "pch"] if dt in config and "lut_path" in config[dt]
     ]
     for device_type in device_types:
-        devices[device_type] = Switch(
-            lut_path=config[device_type]["lut_path"],
-            device_type=DeviceType(device_type),
-            ref_width=float(config[device_type]["ref_width"]),
-        )
+        with cgui.status(f"Loading {device_type} LUT..."):
+            devices[device_type] = Switch(
+                lut_path=config[device_type]["lut_path"],
+                device_type=DeviceType(device_type),
+                ref_width=float(config[device_type]["ref_width"]),
+            )
 
-    for id in spec_input:
+    for id in cgui.progress(spec_input, description="Sizing instances..."):
         spec = spec_input[id]
         if spec.device_type.value not in devices:
             warn(f"No configuration found for {spec.device_type}.")
@@ -617,11 +600,8 @@ def format_results_dataframe(
 
 def app(args: dict, cfg: dict):
     if args["--verbose"]:
-        print("Arguments:")
-        pprint(args)
-
-        print("Configuration:")
-        pprint(cfg)
+        cgui.show_mapping("Arguments", args)
+        cgui.show_mapping("Configuration", cfg)
 
     if args["device"]:
         specs = parse_toml_device_input(args["--input"])
@@ -632,10 +612,9 @@ def app(args: dict, cfg: dict):
             gui.show_results_table(results, title="Device Sizing Results Table")
         if args["--output"]:
             formatted_results.to_csv(args["--output"])
+            cgui.success(f"Results written to {args['--output']}")
         else:
-            print()
-            print("Device Sizing Results:")
-            print(formatted_results)
+            cgui.show_results(formatted_results, "Device Sizing Results")
         return True
     elif args["moscap"]:
         if args["--noise"]: warn("Noise analysis is only available for 'device'.")
@@ -647,10 +626,9 @@ def app(args: dict, cfg: dict):
             gui.show_results_table(results, title="Moscap Sizing Results Table")
         if args["--output"]:
             formatted_results.to_csv(args["--output"])
+            cgui.success(f"Results written to {args['--output']}")
         else:
-            print()
-            print("Moscap Sizing Results:")
-            print(formatted_results)
+            cgui.show_results(formatted_results, "Moscap Sizing Results")
         return True
     elif args["switch"]:
         if args["--noise"]: warn("Noise analysis is only available for 'device'.")
@@ -662,10 +640,9 @@ def app(args: dict, cfg: dict):
             gui.show_results_table(results, title="Switch Sizing Results Table")
         if args["--output"]:
             formatted_results.to_csv(args["--output"])
+            cgui.success(f"Results written to {args['--output']}")
         else:
-            print()
-            print("Switch Sizing Results:")
-            print(formatted_results)
+            cgui.show_results(formatted_results, "Switch Sizing Results")
         return True
 
     if args["--gui"]:
@@ -674,17 +651,15 @@ def app(args: dict, cfg: dict):
 
 
 def config(args):
-    validate_all_configs()
-    cfg: Config = Config()
-    if args["--config"]:
-        new_source = FileSource(file=args["--config"])
-        with Config.change_config_sources(new_source):
-            cfg: Config = Config()
-    cfg: dict = cfg.model_dump()
-    cfg = {k:v for k,v in cfg.items() if v is not None}
-    return cfg
+    fp = Path(args["--config"])
+    assert fp.is_file(), f"Configuration file not found: {fp}"
+    data = toml_load(fp).get("tool", {}).get("novaad")
+    assert data is not None, f"No [tool.novaad] section in {fp}"
+    cfg = Config(**data).model_dump()
+    return {k: v for k, v in cfg.items() if v is not None}
 
 def main():
+    cgui.install()
     args = docopt(__doc__, version="novaad 0.1")
     cfg = config(args)
     if not args["COMMAND_FILE"]:
@@ -705,7 +680,7 @@ def main():
                 except DocoptExit:
                     continue
                 except Exception as e:
-                    print(f"Input:\t{line}\tOutput: {e}")
+                    cgui.error(f"{line.strip()} → {e}")
 
 
 if __name__ == "__main__":

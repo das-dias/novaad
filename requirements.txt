@@ -1,9 +1,7 @@
 numpy
 pandas
-pyyaml
-plotly
+bokeh
 docopt
 scipy
 pydantic
-confz
 toml

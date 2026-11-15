@@ -1,6 +1,8 @@
 # novaad
 ### Gm/Id Analog/Mixed-Signal IC Design Tool
 
+📖 **Documentation: <https://das-dias.github.io/novaad/>**
+
 This tool is inspired in [Prof. B. Mumman's Gm/Id CAD tool/book](https://github.com/bmurmann/Book-on-gm-ID-design/tree/main/starter_kit), also providing support for interpolation upon look-up. This tool extends the former by being deployed as a Python library, providing an API as well as a CLI that can both be used to perform analog IC design.
 
 <div>
@@ -102,28 +104,28 @@ This API effectively enables the user to fit the tool into an optimization loop 
 
 
 
-After extracting the LUT's, create a configuration file using ```.yaml``` format with the following structure:
+After extracting the LUT's, add a ```[tool.novaad]``` section to your ```pyproject.toml``` with the following structure:
   
 
-```yaml
-# example_config.yaml
+```toml
+# pyproject.toml
 
-nch:
-  lut_path: path/to/nmos_lut.csv
-  ref_width: 10e-6 # Constant width used to extract the LUT
+[tool.novaad.nch]
+lut_path = "path/to/nmos_lut.csv"
+ref_width = 10e-6 # Constant width used to extract the LUT
 
-pch:
-  lut_path: path/to/pmos_lut.csv
-  ref_width: 10e-6 # Constant width used to extract the LUT
+[tool.novaad.pch]
+lut_path = "path/to/pmos_lut.csv"
+ref_width = 10e-6 # Constant width used to extract the LUT
 
 ```
 
-This configuration file can be parsed to the CLI to under the ```--config``` flag. Alternatively, you can create a configuration file with the default name ```novaad.cfg.yml``` in the same directory as the CLI is being executed and the tool will automatically load it without the need to specify the ```--config``` flag.
+By default the CLI reads the ```pyproject.toml``` in the directory it is executed from. To use a different file, pass it under the ```--config``` flag.
 
 As of ```v.0.1.2``` the tool supports ```.csv``` and ```.h5``` (HDF5 binary) file formats for a more efficient LUT memory storage and readout. The tool will automatically detect the file format and load the LUTs accordingly.
 
 
-After creating the configuration file and creating the LUTs, you are finally able to use the CLI to perform the Gm/Id design.
+After configuring the tool and creating the LUTs, you are finally able to use the CLI to perform the Gm/Id design.
 
 * **Help**
 
@@ -158,7 +160,7 @@ Options:
   --lch-plot                  Channel lengths to include in plot [default: 'all'].
   --noise                     Include noise summary in the analysis.
   --verbose                   Verbose Output.
-  --config=CONFIG_FILE        Configuration file [default: 'cfg.yml'].
+  --config=CONFIG_FILE        pyproject.toml with a [tool.novaad] section [default: pyproject.toml].
 
 ```
 
@@ -238,7 +240,7 @@ An example:
 
 ```bash
 # Input:
-$ novaad device -i=path/to/example_input.toml --config=path/to/example_config.yaml
+$ novaad device -i=path/to/example_input.toml --config=path/to/pyproject.toml
 ```
 
 ```bash
@@ -268,7 +270,7 @@ Example:
 
 ```bash
 # Input:
-$ novaad --gui --type=nch --config=path/to/example_config.yaml
+$ novaad --gui --type=nch --config=path/to/pyproject.toml
 ```
 <div>
 <img align=center width=700 src=./docs/figs/gui_mode1.png>
@@ -283,7 +285,7 @@ Example:
 
 ```bash
 # Input:
-$ novaad device --gui -i=path/to/example_input.toml --config=path/to/example_config.yaml
+$ novaad device --gui -i=path/to/example_input.toml --config=path/to/pyproject.toml
 ```
 
 <div>
@@ -299,12 +301,11 @@ This project was developed using a Python 3.11 virtual environment. The followin
 # requirements.txt
 numpy:    pip install numpy
 pandas:   pip install pandas
-pyyaml:   pip install pyyaml
-plotly:   pip install plotly
+bokeh:    pip install bokeh
+rich:     pip install rich
 docopt:   pip install docopt
 scipy:    pip install scipy
 pydantic: pip install pydantic
-confz:    pip install confz
 toml:     pip install toml
 ```
 
