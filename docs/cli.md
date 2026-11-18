@@ -40,7 +40,7 @@ The CLI is configured from the `[tool.novaad]` table of a `pyproject.toml`. By d
 out_log_path = "./log"             # optional
 
 [tool.novaad.nch]
-lut_path = "luts/sg13_lv_nch.csv"  # .csv or .h5
+lut_path = "luts/sg13_lv_nch.csv"  # .csv, .h5 or .pb
 ref_width = 10e-6                  # width the LUT was characterized at [m]
 
 [tool.novaad.pch]
@@ -48,7 +48,18 @@ lut_path = "luts/sg13_lv_pch.csv"
 ref_width = 10e-6
 ```
 
-A device type without a table is skipped, with a warning for every instance of that type. LUTs can be `.csv` or `.h5` (HDF5, one top-level key); the format is chosen by the file extension.
+A device type without a table is skipped, with a warning for every instance of that type. LUTs can be `.csv`, `.h5` (HDF5, one top-level key) or `.pb` (compact protobuf, below); the format is chosen by the file extension.
+
+### Binary LUTs
+
+For distribution, a LUT can be stored as a `.pb` file: a zlib-compressed protobuf `CmosDevice` (`protos/lut.proto`) holding the device type, the reference width and the table, column by column as float32. That is about 6× smaller than the CSV: 1.24 MB instead of 7.65 MB for the IHP SG13G2 NMOS LUT. The relative error is about 1e-7, and the `vgs`/`vds`/`vsb`/`lch` grid values round-trip exactly. `schema.io` converts in both directions:
+
+```bash
+python -m schema.io luts/sg13_lv_nch.csv luts/sg13_lv_nch.pb --type nch --ref-width 10e-6
+python -m schema.io luts/sg13_lv_nch.pb luts/sg13_lv_nch.csv
+```
+
+The same conversions are available from Python, along with in-memory variants for DataFrames and bytes: `csv_to_proto`, `proto_to_csv`, `write_proto`, `read_proto`, `to_bytes` and `from_bytes`.
 
 ## Input file
 

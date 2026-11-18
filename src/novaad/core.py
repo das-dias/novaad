@@ -4,7 +4,6 @@ import warnings
 
 import re
 
-#TODO: Updata dataclass usage to pydantic's BaseModel
 # This will enable to easily save and load results to/from json files
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,6 +23,8 @@ from pprint import pprint
 warnings.simplefilter(action="ignore", category=FutureWarning)
 from pandas import DataFrame, read_csv, concat, eval, read_hdf
 from pandas.core.reshape.util import cartesian_product
+
+from schema.io import read_proto
 
 # Define an enum for operations
 
@@ -197,6 +198,8 @@ class Device:
             self.lut = read_hdf(lut_path) # assuming hdf5 file only contains a single high-level key identifier
         elif fp.suffix == ".csv":
             self.lut = read_csv(lut_path)
+        elif fp.suffix == ".pb":
+            self.lut, _, _ = read_proto(fp)   # compact protobuf LUT, see schema.io
         else:
             raise ValueError(f"Invalid file format: {fp.suffix}")
         self.lut = self.lut.abs() # to deal with pmos values as well

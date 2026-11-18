@@ -2,33 +2,31 @@ syntax = "proto3";
 
 package novaad;
 
-// One row of a device LUT. Field names match the CSV headers read by core.Device
-// (see test/data/test_nch_lut_renamed.csv). Values are abs()'d on load, so pch rows are stored positive.
-message DeviceLutEntry {
-  // sweep / bias axes
-  double vgs = 1;
-  double vds = 2;
-  double vsb = 3;
-  double lch = 4;
-  // extracted small-signal parameters
-  double ids = 5;
-  double gm = 6;
-  double gds = 7;
-  double gmoverid = 8;
-  double jd = 9; // ids / ref_width
-  double ft = 10;
-  double av = 11;
-  double ron = 12;
-  double cgg = 13;
-  double cgs = 14;
-  double cgd = 15;
-  double cdb = 16;
-  double csb = 17;
-  double fom_bw = 18;
-}
-
+// Column-oriented device LUT: one packed float32 array per column, all of the same length
+// (one value per LUT row). Field names match the CSV headers read by core.Device.
+// Values are abs()'d on load, so pch columns are stored positive.
 message Lut {
-  repeated DeviceLutEntry entries = 1;
+  // sweep / bias axes
+  repeated float vgs = 1;
+  repeated float vds = 2;
+  repeated float vsb = 3;
+  repeated float lch = 4;
+  // extracted small-signal parameters
+  repeated float ids = 5;
+  repeated float gm = 6;
+  repeated float gds = 7;
+  repeated float cgg = 8;
+  repeated float cgs = 9;
+  repeated float cgd = 10;
+  repeated float cdb = 11;
+  repeated float csb = 12;
+  // derived figures
+  repeated float gmoverid = 13;
+  repeated float jd = 14; // ids / ref_width
+  repeated float ft = 15;
+  repeated float av = 16;
+  repeated float ron = 17;
+  repeated float fom_bw = 18;
 }
 
 enum DeviceType {
@@ -41,7 +39,7 @@ message CmosDevice {
   DeviceType type = 1;
   double ref_width = 2; // width the LUT was characterized at
   oneof lut_source {
-    string lut_path = 3; // .csv / .h5 path or URL
+    string lut_path = 3; // .csv / .h5 / .pb path or URL
     Lut lut = 4;         // inline LUT
   }
 }

@@ -23,5 +23,6 @@ protos: $(PROTOS)
 	mkdir -p $(PROTO_OUT)
 	protoc --proto_path=$(PROTO_DIR) --python_out=$(PROTO_OUT) --pyi_out=$(PROTO_OUT) $(PROTOS)
 
+# generated code only: src/schema also holds hand-written modules (io.py)
 clean-protos:
-	rm -rf $(PROTO_OUT)
+	rm -f $(PROTO_OUT)/*_pb2.py $(PROTO_OUT)/*_pb2.pyi

@@ -224,6 +224,12 @@ for dev in DEVICES:
     extract(dev).to_csv(OUT_DIR / f"sg13_lv_{dev}.csv", index=False)
 ```
 
+To distribute the tables, convert them to the compact protobuf format, which is about 6× smaller (see [Binary LUTs](cli.md#binary-luts)):
+
+```bash
+python -m schema.io luts/sg13_lv_nch.csv luts/sg13_lv_nch.pb --type nch --ref-width 10e-6
+```
+
 Then register the tables with the CLI:
 
 ```toml title="pyproject.toml"
