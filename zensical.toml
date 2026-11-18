@@ -23,6 +23,7 @@ nav = [
     "examples/cs-amplifier.md",
     "examples/fd-amplifier.md",
     "examples/voltage-buffer.md",
+    "examples/dt-fd-amplifier.md",
   ] },
 ]
 

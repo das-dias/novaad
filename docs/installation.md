@@ -44,7 +44,7 @@ make test    # full test suite
 
 ## Tools for the examples
 
-novaad itself only needs the LUTs. The [example notebooks](examples/index.md) also generate those LUTs and verify every design in SPICE, so they need two more tools:
+novaad itself only needs the LUTs. The [example notebooks](examples/index.md) also generate those LUTs and verify every design in SPICE, so they need three more tools:
 
 ngspice ≥ 40
 :   The circuit simulator used for LUT extraction and verification.
@@ -58,16 +58,19 @@ ngspice ≥ 40
     === "Debian / Ubuntu"
 
         ```bash
-        sudo apt install ngspice
+        sudo apt install ngspice   # built with OSDI support
         ```
 
-gf180mcu PDK
-:   The open GlobalFoundries 180 nm PDK, installed with [ciel](https://github.com/fossi-foundation/ciel). Notebook 01 installs ciel and the PDK for you; see [LUT extraction](lut-extraction.md#1-install-the-gf180mcu-pdk-with-ciel). By hand:
+IHP SG13G2 PDK
+:   The open IHP 130 nm BiCMOS PDK, installed with [ciel](https://github.com/fossi-foundation/ciel). Notebook 01 installs ciel and the PDK for you; see [LUT extraction](lut-extraction.md#1-install-the-ihp-sg13g2-pdk-with-ciel). By hand:
 
     ```bash
     pip install ciel
-    ciel enable --pdk-family gf180mcu <version>   # version from `ciel ls-remote --pdk-family gf180mcu`
+    ciel enable --pdk-family ihp-sg13g2 <version>   # version from `ciel ls-remote --pdk-family ihp-sg13g2`
     ```
+
+OpenVAF-Reloaded
+:   Compiles the PDK's PSP103 Verilog-A MOSFET model into the OSDI library that ngspice loads. Notebook 01 downloads it and compiles the models for you; see [LUT extraction](lut-extraction.md#2-install-ngspice-and-compile-the-osdi-models).
 
 The notebook dependencies (`pymoo`, `inspice`, `ipykernel`, `nbconvert`) are in the `dev` dependency group, so `make dev` installs them.
 

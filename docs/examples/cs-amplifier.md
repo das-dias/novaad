@@ -13,12 +13,12 @@ A single-stage amplifier designed by hand with the gm/id method: novaad sizes it
 ```text
         VDD
          │
-VBP ──┤ M2  (pfet_03v3, current-source load)
+VBP ──┤ M2  (sg13_lv_pmos, current-source load)
          │
          ├──── out ──┬── CL
          │           │
  in ──┤ M1          ═╧═
-         │  (nfet_03v3)
+         │  (sg13_lv_nmos)
         GND
 ```
 
@@ -28,13 +28,13 @@ An NMOS common-source transistor `M1`, loaded by a PMOS current source `M2`, dri
 
 ```python
 # ── Design specifications ───────────────────────────────────────────────────
-VDD = 3.3                # supply [V]
+VDD = 1.2                # supply [V]: IHP SG13G2 1.2 V core devices
 CL = 0.5e-12             # load capacitance [F]
 GBW_MIN = 470e6          # gain-bandwidth product [Hz]
-GAIN_MIN_DB = 33         # DC gain [dB]
-INPUT_NOISE_MAX = 20e-6  # input-referred noise [Vrms]: output noise (NOISE_FMIN..GBW) / DC gain
+GAIN_MIN_DB = 26         # DC gain [dB]
+INPUT_NOISE_MAX = 40e-6  # input-referred noise [Vrms]: output noise (NOISE_FMIN..GBW) / DC gain
 NOISE_FMIN = 1.0         # lower bound of the noise integration [Hz]
-POWER_MAX = 500e-6       # power budget [W]
+POWER_MAX = 200e-6       # power budget [W]
 VOUT_DC = VDD / 2        # output DC operating point [V]
 
 # ── Design choices (the knobs of the gm/id method) ──────────────────────────
@@ -58,8 +58,8 @@ The gm/id design flow:
 from math import pi
 from novaad import Device, DeviceSizingSpecification
 
-nch = Device("luts/gf180_nch.csv", device_type="nch", ref_width=10e-6)
-pch = Device("luts/gf180_pch.csv", device_type="pch", ref_width=10e-6)
+nch = Device("luts/sg13_lv_nch.csv", device_type="nch", ref_width=10e-6)
+pch = Device("luts/sg13_lv_pch.csv", device_type="pch", ref_width=10e-6)
 
 gm1 = 2 * pi * GBW_MIN * GBW_MARGIN * CL
 
@@ -84,24 +84,31 @@ gbw_pred = em_n.gm[0] / (2 * pi * c_out)
 ```
 
 ```text
-predicted DC gain : 41.9 dB   (spec >= 33 dB)
-predicted GBW     : 451.1 MHz (spec >= 470 MHz, Cout = 625 fF)
-predicted power   : 398.9 uW  (spec <= 500 uW)
+predicted DC gain : 27.2 dB   (spec >= 26 dB)
+predicted GBW     : 498.9 MHz (spec >= 470 MHz, Cout = 558 fF)
+predicted power   : 130.4 uW  (spec <= 200 uW)
 ```
 
-The electric model already shows that the parasitic drain capacitances (125 fF on top of `CL`) cost more GBW than the 1.2× margin covers.
+The electric model already shows that the parasitic drain capacitances (58 fF on top of `CL`) fit inside the 1.2× GBW margin.
 
 ## Testbench
 
 ```python
-def netlist(vin: float, control: str, source: str | None = None) -> str:
-    return spice.header() + f'''
+def dut(d: dict, name: str = "cs_amp") -> str:
+    # pins: supplies, input, output, load gate bias
+    return f'''.subckt {name} avdd avss in out vbp
 * active-load common-source amplifier
+{fet("M1", "out", "in", "avss", "avss", spice.NMOS, d["w_n"], d["l_n"])}
+{fet("M2", "out", "vbp", "avdd", "avdd", spice.PMOS, d["w_p"], d["l_p"])}
+.ends {name}'''
+
+
+def testbench(d: dict, control: str, vin: float = 0.0, vin_source: str | None = None) -> str:
+    return spice.header() + dut(d) + f'''
 VDD vdd 0 {VDD}
-VIN in 0 {source or f"dc {vin} ac 1"}
-VBP vbp 0 {VDD - VSG_P}
-{fet("M1", "out", "in", "0", "0", "nfet_03v3", W_N, L_N)}
-{fet("M2", "out", "vbp", "vdd", "vdd", "pfet_03v3", W_P, L_P)}
+VBP vbp 0 {d["vbp"]}
+VIN in 0 {vin_source or f"dc {vin} ac 1"}
+XDUT vdd 0 in out vbp cs_amp
 CL out 0 {CL}
 .control
 set wr_singlescale
@@ -110,15 +117,23 @@ set wr_vecnames
 .endc
 .end
 '''
+
+
+d = dict(w_n=W_N, l_n=L_N, w_p=W_P, l_p=L_P, vbp=VDD - VSG_P)
 ```
 
-`control` holds the analysis (`op`, `dc`, `ac`, `tran`, `noise`), and `source` replaces the input waveform for the transient runs. The generated device lines are:
+`dut(d)` is the amplifier as a `.subckt` macro. `testbench` adds the supply, the input and the load bias around it, and instantiates the macro as `XDUT`. `control` holds the analysis (`op`, `dc`, `ac`, `tran`, `noise`), `vin` is the input DC bias, and `vin_source` replaces the input waveform for the transient runs. The generated circuit is:
 
 ```spice
-VIN in 0 dc 0.75 ac 1
-VBP vbp 0 2.3
-M1 out in 0 0 nfet_03v3 w=9.4005e-06 l=5e-07 m=9
-M2 out vbp vdd vdd pfet_03v3 w=9.65798e-06 l=5e-07 m=6
+.subckt cs_amp avdd avss in out vbp
+* active-load common-source amplifier
+XM1 out in avss avss sg13_lv_nmos w=4.07006e-05 l=5e-07 ng=5
+XM2 out vbp avdd avdd sg13_lv_pmos w=2.61266e-05 l=5e-07 ng=3
+.ends cs_amp
+VDD vdd 0 1.2
+VBP vbp 0 0.6125
+VIN in 0 dc 0.3125 ac 1
+XDUT vdd 0 in out vbp cs_amp
 CL out 0 5e-13
 ```
 
@@ -129,42 +144,42 @@ CL out 0 5e-13
 The output of a high-gain stage is very sensitive to its input bias: one LSB of model error moves `vout` to a rail. A fine DC transfer sweep therefore finds the `vin` that puts `vout` at `VOUT_DC`. A real circuit would set it with feedback.
 
 ```python
-dc = spice.read(spice.run(netlist(0.0, f"dc VIN 0 {VDD} 0.2m\nwrdata dc.txt v(out)")) / "dc.txt")
+dc = spice.read(spice.run(testbench(d, f"dc VIN 0 {VDD} 0.2m\nwrdata dc.txt v(out)")) / "dc.txt")
 VIN_DC = float(np.interp(VOUT_DC, dc["v(out)"][::-1], dc["v-sweep"][::-1]))   # vout falls with vin
 ```
 
 ```text
-input bias for vout = 1.650 V: vin = 750.0 mV (novaad predicted Vgs = 750 mV)
+input bias for vout = 0.600 V: vin = 318.5 mV (novaad predicted Vgs = 312 mV)
 ```
 
-The novaad prediction of `Vgs1` matches the simulated bias exactly.
+The novaad prediction of `Vgs1` is within 7 mV of the simulated bias.
 
 ### DC operating point
 
 ```python
 from utils import dc_tables, dc_vectors
 
-bench = netlist(VIN_DC, "op")
-op = spice.read(spice.run(netlist(VIN_DC, f"op\nwrdata op.txt {dc_vectors(bench)}")) / "op.txt")
+bench = testbench(d, "op", VIN_DC)
+op = spice.read(spice.run(testbench(d, f"op\nwrdata op.txt {dc_vectors(bench)}", VIN_DC)) / "op.txt")
 devices, nodes = dc_tables(bench, op)
 ```
 
-| element | I [µA] | vgs [V] | vds [V] | vth [V] | vdsat [V] | gm [µS] | gds [µS] | region |
+| element | I [µA] | vgs [V] | vds [V] | vth [V] | vdss [V] | gm [µS] | gds [µS] | region |
 |---|---|---|---|---|---|---|---|---|
-| M1 | 120.9 | 0.750 | 1.650 | 0.712 | 0.108 | 1772.5 | 9.94 | saturation |
-| M2 | 120.9 | 1.000 | 1.650 | 0.788 | 0.215 | 962.5 | 4.28 | saturation |
+| XDUT.XM1 | 108.8 | 0.318 | 0.600 | 0.260 | 0.134 | 1753.6 | 64.72 | saturation |
+| XDUT.XM2 | 108.8 | 0.588 | 0.600 | 0.365 | 0.218 | 880.0 | 12.48 | saturation |
 
 ### AC, transient and noise
 
 ```python
-ac = spice.read(spice.run(netlist(VIN_DC, "ac dec 50 1k 10G\nwrdata ac.txt vdb(out) vp(out)")) / "ac.txt")
+ac = spice.read(spice.run(testbench(d, "ac dec 50 1k 10G\nwrdata ac.txt vdb(out) vp(out)", VIN_DC)) / "ac.txt")
 gain_db, f3db, gbw = spice.bandwidth(ac["frequency"], ac["vdb(out)"])   # GBW = A0·f-3dB
 ```
 
 The transient tests are:
 
 - a 1 mV sine at 20 kHz;
-- a 0 → 3.3 V ramp in 200 µs, which traces the whole transfer curve rail to rail;
+- a 0 → 1.2 V ramp in 200 µs, which traces the whole transfer curve rail to rail;
 - a full-supply pulse that measures the slew rate.
 
 When the input falls, M1 turns off and only the PMOS current charges the output, so the rising slew rate should be close to `Ids/Cout`.
@@ -175,15 +190,15 @@ Noise is integrated from `NOISE_FMIN` to the GBW and referred to the input throu
 
 | metric | spec | novaad prediction | ngspice |
 |---|---|---|---|
-| DC gain [dB] | ≥ 33 | 41.9 | **41.91** |
-| GBW [MHz] | ≥ 470 | 451.1 | **450.1** :material-close: |
-| −3 dB bandwidth [kHz] | | | 3613 |
-| Transient gain at 20 kHz [dB] | = AC gain | | 41.90 |
-| Slew rate, output rising [V/µs] | | 193.4 (`Ids/Cout`) | 263.7 |
-| Slew rate, output falling [V/µs] | | | 3587 |
-| Input-referred noise [µVrms] | ≤ 20 | 7.40 (thermal only) | **14.28** |
-| Power [µW] | ≤ 500 | 398.9 | 399 |
+| DC gain [dB] | ≥ 26 | 27.2 | **27.13** |
+| GBW [MHz] | ≥ 470 | 498.9 | **513.2** |
+| −3 dB bandwidth [kHz] | | 21755 | 22590 |
+| Transient gain at 20 kHz [dB] | = AC gain | | 27.13 |
+| Slew rate, output rising [V/µs] | | 194.8 (`Ids/Cout`) | 104.6 |
+| Slew rate, output falling [V/µs] | | | 1087 |
+| Input-referred noise [µVrms] | ≤ 40 | 18.0 (thermal only) | **29.78** |
+| Power [µW] | ≤ 200 | 130.4 | 130.5 |
 | All devices saturated | yes | | yes |
 
-!!! tip "Closing the GBW gap"
-    The miss on GBW was predicted before simulating: novaad's electric model gives 451 MHz, and ngspice measures 450 MHz. Raising `GBW_MARGIN` to about 1.25 covers the drain parasitics at the cost of a little more power.
+!!! tip "Low-voltage design"
+    At 1.2 V the output can swing only about `VDD − Vdss1 − Vdss2 ≈ 0.85 V`, and short channels lower the intrinsic gain, so the gain spec is 26 dB instead of the 3.3 V design's 33 dB. Flicker noise grows at these short lengths: it is most of the gap between novaad's thermal-only noise estimate and ngspice. Longer channels (`L_N`) buy back both gain and noise, at the cost of area and GBW.

@@ -1,6 +1,7 @@
 """Minimal ngspice driver shared by the example notebooks."""
 
 import os
+import re
 import subprocess
 from pathlib import Path
 from tempfile import mkdtemp
@@ -9,16 +10,18 @@ import numpy as np
 from pandas import DataFrame, read_csv
 
 PDK_ROOT = Path(os.environ.get("PDK_ROOT", Path.home() / ".ciel"))
-PDK = os.environ.get("PDK", "gf180mcuD")
+PDK = os.environ.get("PDK", "ihp-sg13g2")
 MODELS = PDK_ROOT / PDK / "libs.tech" / "ngspice"
+# PSP103 compact models, compiled by notebook 01 with OpenVAF into MODELS/osdi
+OSDI = ("psp103", "psp103_nqs")
+NMOS, PMOS = "sg13_lv_nmos", "sg13_lv_pmos"   # 1.2 V core devices, Lmin = 130 nm
 
 
-def header(corner: str = "typical", temp: float = 27) -> str:
-    """Model includes for the gf180mcu 3.3 V devices (nfet_03v3 / pfet_03v3)."""
+def header(corner: str = "mos_tt", temp: float = 27) -> str:
+    """Model library of the IHP SG13G2 low-voltage MOSFETs (sg13_lv_nmos / sg13_lv_pmos)."""
     return (
         "* novaad testbench\n"  # SPICE ignores the first line: it is the title
-        f".include {MODELS / 'design.ngspice'}\n"
-        f".lib {MODELS / 'sm141064.ngspice'} {corner}\n"
+        f".lib {MODELS / 'models' / 'cornerMOSlv.lib'} {corner}\n"
         f".temp {temp}\n"
         ".option savecurrents\n"
     )
@@ -27,6 +30,8 @@ def header(corner: str = "typical", temp: float = 27) -> str:
 def run(netlist: str) -> Path:
     """Run `ngspice -b` in a fresh temp dir; files written by `wrdata` land there."""
     wd = Path(mkdtemp(prefix="novaad_spice_"))
+    # ngspice reads ./.spiceinit at start-up: it loads the OSDI models before the netlist is parsed
+    (wd / ".spiceinit").write_text("".join(f"osdi '{MODELS / 'osdi' / m}.osdi'\n" for m in OSDI))
     (wd / "tb.spice").write_text(netlist)
     proc = subprocess.run(
         ["ngspice", "-b", "tb.spice"], cwd=wd, capture_output=True, text=True
@@ -39,11 +44,24 @@ def run(netlist: str) -> Path:
     return wd
 
 
+def mos(inst: str, model: str, *params: str) -> str:
+    """`wrdata` vectors of a PDK MOSFET: `mos("xdut.xm1", NMOS, "gm")` -> `@n.xdut.xm1.nsg13_lv_nmos[gm]`."""
+    return " ".join(f"@n.{inst}.n{model}[{p}]" for p in params)
+
+
+def column(vec: str) -> str:
+    """Column name `read` gives a vector: `@n.xm1.nsg13_lv_nmos[gm]` -> `xm1.gm`, `@r1[i]` -> `r1.i`."""
+    if not vec.startswith("@"):
+        return vec
+    name, param = vec[1:].rstrip("]").split("[")
+    # a PDK MOSFET is a subcircuit around one OSDI device `N<model>`: keep the instance path only
+    return f"{m[1]}.{param}" if (m := re.fullmatch(r"n\.(.+)\.n[^.]+", name)) else f"{name}.{param}"
+
+
 def read(path: Path) -> DataFrame:
     """Read a `wrdata` file written with `set wr_singlescale` and `set wr_vecnames`."""
     df = read_csv(path, sep=r"\s+")
-    # device parameters "@m1[gm]" -> "m1.gm"; node voltages/currents keep their name
-    df.columns = [c[1:].replace("[", ".").rstrip("]") if c.startswith("@") else c for c in df.columns]
+    df.columns = [column(c) for c in df.columns]
     return df
 
 

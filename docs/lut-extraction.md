@@ -1,17 +1,20 @@
 # LUT extraction with ngspice
 
-novaad sizes devices from **look-up tables**. These are tables of small-signal parameters over a grid of `vgs × vds × vsb × lch`, all characterized at one reference width `REF_WIDTH`. This page builds them for the 3.3 V devices of the open **GlobalFoundries gf180mcu** PDK with a single ngspice testbench.
+novaad sizes devices from **look-up tables**. These are tables of small-signal parameters over a grid of `vgs × vds × vsb × lch`, all characterized at one reference width `REF_WIDTH`. This page builds them for the 1.2 V core devices of the open **IHP SG13G2** 130 nm BiCMOS PDK with a single ngspice testbench.
 
 !!! example "Notebook"
-    Everything here is runnable in [`notebooks/01_pdk_ngspice_lut_extraction.ipynb`](https://github.com/das-dias/novaad/blob/master/notebooks/01_pdk_ngspice_lut_extraction.ipynb). It writes `notebooks/luts/gf180_nch.csv` and `gf180_pch.csv`, which the [examples](examples/index.md) read.
+    Everything here is runnable in [`notebooks/01_pdk_ngspice_lut_extraction.ipynb`](https://github.com/das-dias/novaad/blob/master/notebooks/01_pdk_ngspice_lut_extraction.ipynb). It writes `notebooks/luts/sg13_lv_nch.csv` and `sg13_lv_pch.csv`, which the [examples](examples/index.md) read.
 
-## 1. Install the gf180mcu PDK with ciel
+!!! note "Why not gf180mcu?"
+    The open gf180mcu PDK has no 1.8 V core devices. Its shortest MOSFETs are the 3.3 V `nfet_03v3` / `pfet_03v3`, binned from L = 0.28 µm, and `l=0.18u` fails in ngspice with *could not find a valid modelname*. This is tracked in [gdsfactory/gf180mcu#205](https://github.com/gdsfactory/gf180mcu/issues/205). IHP SG13G2's `sg13_lv_nmos` / `sg13_lv_pmos` go down to L = 130 nm.
 
-[ciel](https://github.com/fossi-foundation/ciel) is the FOSSi Foundation's PDK version manager, the successor of `volare`. It downloads prebuilt releases of [google/gf180mcu-pdk](https://github.com/google/gf180mcu-pdk) into a PDK root, by default `~/.ciel`.
+## 1. Install the IHP SG13G2 PDK with ciel
+
+[ciel](https://github.com/fossi-foundation/ciel) is the FOSSi Foundation's PDK version manager, the successor of `volare`. It downloads prebuilt releases of [IHP-GmbH/IHP-Open-PDK](https://github.com/IHP-GmbH/IHP-Open-PDK) into a PDK root, by default `~/.ciel`.
 
 ```python
-PDK_FAMILY = "gf180mcu"
-PDK_VARIANT = "gf180mcuD"   # 5LM, 11 kÅ top metal: the variant used by most open-source tapeouts
+PDK_FAMILY = "ihp-sg13g2"
+PDK_VARIANT = "ihp-sg13g2"  # SG13G2 has a single variant
 PDK_VERSION = None          # None -> latest release, or pin a commit hash from `ciel ls-remote`
 PDK_ROOT = Path("~/.ciel").expanduser()
 
@@ -25,12 +28,12 @@ subprocess.run(
 )
 
 MODELS = PDK_ROOT / PDK_VARIANT / "libs.tech" / "ngspice"
-assert (MODELS / "sm141064.ngspice").is_file()
+assert (MODELS / "models" / "cornerMOSlv.lib").is_file()
 ```
 
-The 3.3 V devices `nfet_03v3` and `pfet_03v3` are defined in `sm141064.ngspice`. They are binned BSIM4 (level 54) models, selected by the `typical`, `ff`, `ss`, `fs` and `sf` corner libraries, and are instantiated as plain MOSFETs: `M1 d g s b nfet_03v3 w=... l=...`.
+The low-voltage MOSFETs `sg13_lv_nmos` and `sg13_lv_pmos` (1.2 V, L ≥ 130 nm) are defined in `cornerMOSlv.lib`, with the corners `mos_tt`, `mos_ss`, `mos_ff`, `mos_sf` and `mos_fs`. Each one is a subcircuit around a single **PSP103** device. Instances therefore use `X`: `XM1 d g s b sg13_lv_nmos w=... l=... ng=...`, where `w` is the total width, split over `ng` fingers.
 
-## 2. Install ngspice
+## 2. Install ngspice and compile the OSDI models
 
 === "macOS"
 
@@ -41,27 +44,49 @@ The 3.3 V devices `nfet_03v3` and `pfet_03v3` are defined in `sm141064.ngspice`.
 === "Debian / Ubuntu"
 
     ```bash
-    sudo apt install ngspice   # version >= 40
+    sudo apt install ngspice   # version >= 40, built with OSDI support
+    ```
+
+PSP103 is a Verilog-A compact model. ngspice loads it as a compiled **OSDI** library, and the PDK ships the Verilog-A sources. [OpenVAF-Reloaded](https://github.com/OpenVAF/OpenVAF-Reloaded) compiles them:
+
+```bash
+cd ~/.ciel/ihp-sg13g2/libs.tech/verilog-a/psp103
+mkdir -p ../../ngspice/osdi
+openvaf-r psp103.va --output ../../ngspice/osdi/psp103.osdi
+openvaf-r psp103_nqs.va --output ../../ngspice/osdi/psp103_nqs.osdi
+```
+
+The notebook does this for you. If `openvaf-r` isn't on `PATH`, it downloads the release build for your platform to `~/.local/opt/openvaf-r`.
+
+!!! warning "macOS: openvaf-r is killed at launch"
+    The macOS release bundles `libLLVM`, `libz3` and `libzstd` with invalid code signatures, so macOS kills `openvaf-r` with exit code 137. Re-sign them ad hoc, which the notebook also does:
+
+    ```bash
+    codesign --force -s - ~/.local/opt/openvaf-r/lib/*.dylib
     ```
 
 ## 3. A minimal ngspice driver
 
-All the notebooks share `notebooks/spice.py`, a small ngspice driver of about 50 lines:
+All the notebooks share `notebooks/spice.py`, a small ngspice driver of about 80 lines:
 
 | function | purpose |
 |---|---|
-| `header(corner, temp)` | title line, `.include design.ngspice`, `.lib sm141064.ngspice <corner>`, `.temp`, `.option savecurrents` |
-| `run(netlist)` | writes the netlist to a fresh temp dir, runs `ngspice -b`, raises on errors, returns the dir |
-| `read(path)` | loads a `wrdata` file (`set wr_singlescale`, `set wr_vecnames`) into a DataFrame; `@m1[gm]` becomes `m1.gm` |
+| `header(corner, temp)` | title line, `.lib cornerMOSlv.lib <corner>`, `.temp`, `.option savecurrents` |
+| `run(netlist)` | writes the netlist and a `.spiceinit` that loads the OSDI models to a fresh temp dir, runs `ngspice -b`, raises on errors, returns the dir |
+| `mos(inst, model, *params)` | PSP103 operating-point vectors of a transistor: `mos("xm1", NMOS, "gm")` → `@n.xm1.nsg13_lv_nmos[gm]` |
+| `read(path)` | loads a `wrdata` file (`set wr_singlescale`, `set wr_vecnames`) into a DataFrame; `@n.xm1.nsg13_lv_nmos[gm]` becomes `xm1.gm` |
 | `bandwidth(f, gdb)` | `(A0 [dB], f−3dB, A0·f−3dB)` of a low-pass response |
 | `slew_rate(t, v, t0, t1)` | slope between 40 % and 60 % of a transition |
 
 ```python
-def header(corner: str = "typical", temp: float = 27) -> str:
+OSDI = ("psp103", "psp103_nqs")
+NMOS, PMOS = "sg13_lv_nmos", "sg13_lv_pmos"
+
+
+def header(corner: str = "mos_tt", temp: float = 27) -> str:
     return (
         "* novaad testbench\n"  # SPICE ignores the first line: it is the title
-        f".include {MODELS / 'design.ngspice'}\n"
-        f".lib {MODELS / 'sm141064.ngspice'} {corner}\n"
+        f".lib {MODELS / 'models' / 'cornerMOSlv.lib'} {corner}\n"
         f".temp {temp}\n"
         ".option savecurrents\n"
     )
@@ -69,6 +94,8 @@ def header(corner: str = "typical", temp: float = 27) -> str:
 
 def run(netlist: str) -> Path:
     wd = Path(mkdtemp(prefix="novaad_spice_"))
+    # ngspice reads ./.spiceinit at start-up: it loads the OSDI models before the netlist is parsed
+    (wd / ".spiceinit").write_text("".join(f"osdi '{MODELS / 'osdi' / m}.osdi'\n" for m in OSDI))
     (wd / "tb.spice").write_text(netlist)
     proc = subprocess.run(["ngspice", "-b", "tb.spice"], cwd=wd, capture_output=True, text=True)
     log = proc.stdout + proc.stderr
@@ -83,13 +110,13 @@ def run(netlist: str) -> Path:
 | column | meaning | source |
 |---|---|---|
 | `vgs vds vsb lch` | grid axes | sweep |
-| `ids gm gds` | drain current and conductances | BSIM4 operating point |
-| `cgg cgs cgd` | gate capacitances (intrinsic + overlap) | `cgg+cgso+cgdo`, `−cgs+cgso`, `−cgd+cgdo` |
-| `cdb csb` | junction capacitances | `capbd`, `capbs` |
+| `ids gm gds` | drain current and conductances | PSP103 operating point |
+| `cgg cgs cgd` | gate capacitances (intrinsic + overlap) | `cgg+cgsol+cgdol`, `cgs+cgsol`, `cgd+cgdol` |
+| `cdb csb` | junction capacitances | `cjd`, `cjs` |
 | `gmoverid jd ft av ron fom_bw` | derived figures | `gm/ids`, `ids/W`, `gm/(2π·cgg)`, `gm/gds`, `1/gds`, `ft·av` |
 
-!!! info "BSIM4 capacitances in ngspice"
-    ngspice reports the off-diagonal BSIM4 capacitances as **transcapacitances**, `cij = −∂Qi/∂Vj`, which is why `cgs` and `cgd` are negated. BSIM4's `cgg` is intrinsic only, so the overlap terms `cgso` and `cgdo` are added back.
+!!! info "PSP103 capacitances"
+    PSP103 reports its intrinsic capacitances as positive values, and the gate overlap capacitances separately as `cgsol` and `cgdol`. Its `cgg` is intrinsic only, so the overlaps are added back.
 
 PMOS is swept with negated voltages. novaad takes `abs()` of the whole LUT, so both device types end up with positive values.
 
@@ -99,28 +126,28 @@ One ngspice run per `(lch, vsb)` pair. Each run does a nested `vgs × vds` DC sw
 
 ```python
 # sweep settings
-VDD = 3.3                                   # sweep range for |vgs| and |vds| (3.3 V devices)
+VDD = 1.2                                   # sweep range for |vgs| and |vds| (1.2 V core devices)
 REF_WIDTH = 10e-6                           # characterization width; novaad scales W from it
-LCH = [0.28e-6, 0.5e-6, 1e-6, 2e-6, 4e-6]   # channel lengths (0.28 um is the 3.3 V minimum)
-VSB = [0.0, 0.4, 0.8, 1.2]                  # source-bulk voltages
-VGS_STEP = 0.05
-VDS_STEP = 0.1
-CORNER = "typical"
+LCH = [0.13e-6, 0.18e-6, 0.25e-6, 0.5e-6, 1e-6, 2e-6]   # channel lengths (0.13 um is the minimum)
+VSB = [0.0, 0.2, 0.4, 0.6]                  # source-bulk voltages
+VGS_STEP = 0.025
+VDS_STEP = 0.05
+CORNER = "mos_tt"
 TEMP = 27
 
-DEVICES = {"nch": "nfet_03v3", "pch": "pfet_03v3"}
-PARAMS = ["id", "gm", "gds", "cgg", "cgs", "cgd", "cgso", "cgdo", "capbd", "capbs"]
+DEVICES = {"nch": spice.NMOS, "pch": spice.PMOS}
+PARAMS = ["ids", "gm", "gds", "cgg", "cgs", "cgd", "cgsol", "cgdol", "cjd", "cjs"]
 
 
 def testbench(model: str, lch: float, vsb: float, sign: int) -> str:
     # sign=+1 for nmos, -1 for pmos (source grounded, all voltages negated)
-    vecs = " ".join(["v(g)", "v(d)"] + [f"@m1[{p}]" for p in PARAMS])
+    vecs = " ".join(["v(g)", "v(d)", spice.mos("xm1", model, *PARAMS)])
     return spice.header(CORNER, TEMP) + f'''
 * {model} LUT sweep: L={lch}, VSB={vsb}
 VG g 0 0
 VD d 0 0
 VB b 0 {-sign * vsb}
-M1 d g 0 b {model} w={REF_WIDTH} l={lch}
+XM1 d g 0 b {model} w={REF_WIDTH} l={lch} ng=1
 .control
 set wr_singlescale
 set wr_vecnames
@@ -132,26 +159,25 @@ wrdata lut.txt {vecs}
 '''
 ```
 
-For `nfet_03v3` at `L = 0.28 µm`, `VSB = 0` this produces:
+For `sg13_lv_nmos` at `L = 0.13 µm`, `VSB = 0` this produces:
 
 ```spice
 * novaad testbench
-.include ~/.ciel/gf180mcuD/libs.tech/ngspice/design.ngspice
-.lib ~/.ciel/gf180mcuD/libs.tech/ngspice/sm141064.ngspice typical
+.lib ~/.ciel/ihp-sg13g2/libs.tech/ngspice/models/cornerMOSlv.lib mos_tt
 .temp 27
 .option savecurrents
 
-* nfet_03v3 LUT sweep: L=2.8e-07, VSB=0.0
+* sg13_lv_nmos LUT sweep: L=1.3e-07, VSB=0.0
 VG g 0 0
 VD d 0 0
 VB b 0 -0.0
-M1 d g 0 b nfet_03v3 w=1e-05 l=2.8e-07
+XM1 d g 0 b sg13_lv_nmos w=1e-05 l=1.3e-07 ng=1
 .control
 set wr_singlescale
 set wr_vecnames
-save v(g) v(d) @m1[id] @m1[gm] @m1[gds] @m1[cgg] @m1[cgs] @m1[cgd] @m1[cgso] @m1[cgdo] @m1[capbd] @m1[capbs]
-dc VG 0 3.3 0.05 VD 0.1 3.3 0.1
-wrdata lut.txt v(g) v(d) @m1[id] @m1[gm] @m1[gds] @m1[cgg] @m1[cgs] @m1[cgd] @m1[cgso] @m1[cgdo] @m1[capbd] @m1[capbs]
+save v(g) v(d) @n.xm1.nsg13_lv_nmos[ids] @n.xm1.nsg13_lv_nmos[gm] ... @n.xm1.nsg13_lv_nmos[cjs]
+dc VG 0 1.2 0.025 VD 0.05 1.2 0.05
+wrdata lut.txt v(g) v(d) @n.xm1.nsg13_lv_nmos[ids] @n.xm1.nsg13_lv_nmos[gm] ... @n.xm1.nsg13_lv_nmos[cjs]
 .endc
 .end
 ```
@@ -174,11 +200,11 @@ def extract(dev: str) -> DataFrame:
             raw = spice.read(wd / "lut.txt")
             frames.append(DataFrame({
                 "vgs": raw["v(g)"], "vds": raw["v(d)"], "vsb": vsb, "lch": lch,
-                "ids": raw["m1.id"], "gm": raw["m1.gm"], "gds": raw["m1.gds"],
-                "cgg": raw["m1.cgg"] + raw["m1.cgso"] + raw["m1.cgdo"],
-                "cgs": -raw["m1.cgs"] + raw["m1.cgso"],
-                "cgd": -raw["m1.cgd"] + raw["m1.cgdo"],
-                "cdb": raw["m1.capbd"], "csb": raw["m1.capbs"],
+                "ids": raw["xm1.ids"], "gm": raw["xm1.gm"], "gds": raw["xm1.gds"],
+                "cgg": raw["xm1.cgg"] + raw["xm1.cgsol"] + raw["xm1.cgdol"],
+                "cgs": raw["xm1.cgs"] + raw["xm1.cgsol"],
+                "cgd": raw["xm1.cgd"] + raw["xm1.cgdol"],
+                "cdb": raw["xm1.cjd"], "csb": raw["xm1.cjs"],
             }))
     lut = concat(frames, ignore_index=True).abs()
     lut[["vgs", "vds"]] = lut[["vgs", "vds"]].round(6)   # exact grid values (the GUI needs them)
@@ -195,18 +221,18 @@ def extract(dev: str) -> DataFrame:
 OUT_DIR = Path("luts")
 OUT_DIR.mkdir(exist_ok=True)
 for dev in DEVICES:
-    extract(dev).to_csv(OUT_DIR / f"gf180_{dev}.csv", index=False)
+    extract(dev).to_csv(OUT_DIR / f"sg13_lv_{dev}.csv", index=False)
 ```
 
 Then register the tables with the CLI:
 
 ```toml title="pyproject.toml"
 [tool.novaad.nch]
-lut_path = "notebooks/luts/gf180_nch.csv"
+lut_path = "notebooks/luts/sg13_lv_nch.csv"
 ref_width = 10e-6
 
 [tool.novaad.pch]
-lut_path = "notebooks/luts/gf180_pch.csv"
+lut_path = "notebooks/luts/sg13_lv_pch.csv"
 ref_width = 10e-6
 ```
 
@@ -217,7 +243,7 @@ Load the tables with novaad and plot the classic gm/id charts at `|vds| = VDD/2`
 ```python
 from novaad import Device
 
-nch = Device("luts/gf180_nch.csv", device_type="nch", ref_width=REF_WIDTH)
+nch = Device("luts/sg13_lv_nch.csv", device_type="nch", ref_width=REF_WIDTH)
 lut = nch.lut
 vds = lut["vds"].unique()[abs(lut["vds"].unique() - VDD / 2).argmin()]
 for lch in LCH:
@@ -225,4 +251,4 @@ for lch in LCH:
     ...  # plot gmoverid vs vgs, jd / ft / av vs gmoverid
 ```
 
-In weak inversion, NMOS gm/id should approach roughly 25–30 V⁻¹. Short-channel `ft` should reach the GHz range. The `novaad --gui --type=nch` explorer shows the same charts interactively.
+In weak inversion, NMOS gm/id should approach roughly 25–30 V⁻¹. At the 130 nm minimum length, NMOS `ft` reaches about 70 GHz and PMOS about 30 GHz. The `novaad --gui --type=nch` explorer shows the same charts interactively.

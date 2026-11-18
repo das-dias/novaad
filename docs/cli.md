@@ -40,11 +40,11 @@ The CLI is configured from the `[tool.novaad]` table of a `pyproject.toml`. By d
 out_log_path = "./log"             # optional
 
 [tool.novaad.nch]
-lut_path = "luts/gf180_nch.csv"    # .csv or .h5
+lut_path = "luts/sg13_lv_nch.csv"  # .csv or .h5
 ref_width = 10e-6                  # width the LUT was characterized at [m]
 
 [tool.novaad.pch]
-lut_path = "luts/gf180_pch.csv"
+lut_path = "luts/sg13_lv_pch.csv"
 ref_width = 10e-6
 ```
 

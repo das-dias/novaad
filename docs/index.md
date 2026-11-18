@@ -46,11 +46,11 @@ The gm/id ratio sets the inversion level. The channel length sets the trade-off 
 
 -   :material-table: **[LUT extraction](lut-extraction.md)**
 
-    Build the NMOS/PMOS LUTs for the open gf180mcu PDK with an ngspice testbench.
+    Build the NMOS/PMOS LUTs for the open IHP SG13G2 PDK with an ngspice testbench.
 
 -   :material-chip: **[Examples](examples/index.md)**
 
-    Design a common-source amplifier, a fully-differential amplifier and a voltage buffer, with ngspice verification and pymoo multi-objective optimization.
+    Design a common-source amplifier, a fully-differential amplifier, a voltage buffer and a discrete-time fully-differential amplifier, with ngspice verification and pymoo multi-objective optimization.
 
 </div>
 

@@ -38,28 +38,28 @@ A fully-differential pair with active loads and resistive common-mode sensing. n
 The specs are **targets**, not bounds. The optimizer drives every measured parameter toward its target.
 
 ```python
-VDD = 3.3              # supply [V]
-VIN_CM = 1.2           # input common mode [V]
+VDD = 1.2              # supply [V]: IHP SG13G2 1.2 V core devices
+VIN_CM = 0.6           # input common mode [V]
 CL = 0.5e-12           # load capacitance per output [F]
 NOISE_FMIN = 1.0       # lower bound of the noise integration [Hz] (upper bound = GBW)
 
 SPEC_TARGETS = {
-    "gain_db": 36,     # differential DC gain [dB]
+    "gain_db": 26,     # differential DC gain [dB]
     "gbw": 500e6,      # differential gain-bandwidth product A0·f-3dB [Hz]
-    "vocm": 2.0,       # output common mode [V]: set by the loads, VDD - Vsg
-    "power": 1.2e-3,   # power dissipation VDD·I(VDD) [W], including the IREF branch
+    "vocm": 0.6,       # output common mode [V]: set by the loads, VDD - Vsg
+    "power": 400e-6,   # power dissipation VDD·I(VDD) [W], including the IREF branch
 }
 # one-sided limits: only exceeding the limit counts as error
 SPEC_LIMITS = {
-    "vn_in": 20e-6,    # input-referred noise [Vrms]: output noise (NOISE_FMIN..GBW) / DC gain
+    "vn_in": 60e-6,    # input-referred noise [Vrms]: output noise (NOISE_FMIN..GBW) / DC gain
 }
 
-RES_SHEET = 1000       # poly resistor sheet resistance [ohm/sq] (ppolyf_u_1k)
+RES_SHEET = 1360       # poly resistor sheet resistance [ohm/sq] (rhigh)
 RES_WIDTH = 1e-6       # poly resistor width [m]
 
 # design space: 8 variables
-GMID_IN_BOUNDS = (12, 20)
-GMID_LOAD_BOUNDS = (6, 18)
+GMID_IN_BOUNDS = (12, 18)
+GMID_LOAD_BOUNDS = (6, 12)
 GMID_TAIL_BOUNDS = (6, 12)
 I_TAIL_BOUNDS = (10e-6, 500e-6)
 R_CM_BOUNDS = (200e3, 2e6)
@@ -67,8 +67,8 @@ R_CM_BOUNDS = (200e3, 2e6)
 
 # R-NSGA-II
 REF_POINTS = [         # aspiration points (spec error [%], area [um²], power [uW], -FoM_S [dB])
-    (0, 1500, 1500, -176),
-    (0, 500, 1200, -174),
+    (0, 600, 400, -172),
+    (0, 250, 300, -170),
 ]
 EPSILON = 0.05
 POP_SIZE = 48
@@ -97,7 +97,7 @@ def size(x) -> dict:
         vsd = dcop.vgs[0]
     vocm = VDD - vsd
 
-    vs = VIN_CM - 0.8
+    vs = VIN_CM - 0.4
     for _ in range(2):
         dcop, s_in = nch.sizing(Spec(vds=vocm - vs, vsb=vs, lch=l_in, gmoverid=gmid_in, ids=i_tail / 2), return_dcop=True)
         vs = VIN_CM - dcop.vgs[0]
@@ -117,10 +117,14 @@ def area(d: dict) -> float:
 The differential input comes from two E-sources around `VIN_CM`, both driven by one source `Vd`. `Vd` is therefore the input of the AC transfer and the reference source of the noise analysis. `meas` finds the DC gain `A0` and the −3 dB corner `f3`, and the noise is integrated up to `GBW = A0·f3`.
 
 ```python
+SAT = {"xdut.xm1": spice.NMOS, "xdut.xm3": spice.PMOS, "xdut.xm5": spice.NMOS}   # devices checked for saturation
+
+
 def measure() -> str:
+    sat = " ".join(spice.mos(m, model, "vds", "vdss") for m, model in SAT.items())
     return f'''set sqrnoise
 op
-wrdata op.txt v(outp) v(outn) v(tail) i(vdd) @m1[vds] @m1[vdsat] @m3[vds] @m3[vdsat] @m5[vds] @m5[vdsat]
+wrdata op.txt v(outp) v(outn) v(xdut.tail) i(vdd) {sat}
 ac dec 20 1 100G
 let gdb = db(v(outp) - v(outn))
 meas ac a0 find gdb at=1
@@ -135,25 +139,33 @@ setplot noise2
 wrdata noise_tot.txt onoise_total'''
 
 
-def netlist(d: dict, control: str | None = None, vd_source: str = "dc 0 ac 1") -> str:
-    return spice.header() + f'''
+def dut(d: dict, name: str = "fd_amp") -> str:
+    # pins: supplies, differential input, differential output, bias current
+    nmos, pmos = spice.NMOS, spice.PMOS
+    return f'''.subckt {name} avdd avss inp inn outp outn ibias
 * fully-differential pair, PMOS active loads, resistive CM sensing, mirrored tail
+{fet("M6", "ibias", "ibias", "avss", "avss", nmos, d["w_tail"], d["l_tail"])}
+{fet("M5", "tail", "ibias", "avss", "avss", nmos, d["w_tail"], d["l_tail"])}
+{fet("M1", "outn", "inp", "tail", "avss", nmos, d["w_in"], d["l_in"])}
+{fet("M2", "outp", "inn", "tail", "avss", nmos, d["w_in"], d["l_in"])}
+{fet("M3", "outn", "cmfb", "avdd", "avdd", pmos, d["w_load"], d["l_load"])}
+{fet("M4", "outp", "cmfb", "avdd", "avdd", pmos, d["w_load"], d["l_load"])}
+R1 outp cmfb {d["r_cm"]}
+R2 outn cmfb {d["r_cm"]}
+.ends {name}'''
+
+
+def testbench(d: dict, control: str | None = None, vd_source: str = "dc 0 ac 1") -> str:
+    return spice.header() + dut(d) + f'''
 VDD vdd 0 {VDD}
 IREF vdd nb {d["i_tail"]}
-{fet("M6", "nb", "nb", "0", "0", "nfet_03v3", d["w_tail"], d["l_tail"])}
-{fet("M5", "tail", "nb", "0", "0", "nfet_03v3", d["w_tail"], d["l_tail"])}
 VCM cmi 0 {VIN_CM}
 Vd vd 0 {vd_source}
 Ep inp cmi vd 0 0.5
 En cmi inn vd 0 0.5
-{fet("M1", "outn", "inp", "tail", "0", "nfet_03v3", d["w_in"], d["l_in"])}
-{fet("M2", "outp", "inn", "tail", "0", "nfet_03v3", d["w_in"], d["l_in"])}
-{fet("M3", "outn", "cmfb", "vdd", "vdd", "pfet_03v3", d["w_load"], d["l_load"])}
-{fet("M4", "outp", "cmfb", "vdd", "vdd", "pfet_03v3", d["w_load"], d["l_load"])}
-R1 outp cmfb {d["r_cm"]}
-R2 outn cmfb {d["r_cm"]}
-C1 outp 0 {CL}
-C2 outn 0 {CL}
+XDUT vdd 0 inp inn outp outn nb fd_amp
+CLP outp 0 {CL}
+CLN outn 0 {CL}
 .control
 set wr_singlescale
 set wr_vecnames
@@ -163,13 +175,13 @@ set wr_vecnames
 '''
 ```
 
-`simulate(d)` reads the output files and returns:
+`dut(d)` is the amplifier as a `.subckt` macro, and `testbench` instantiates it as `XDUT`. Its devices and internal nodes are therefore addressed hierarchically: `spice.mos("xdut.xm1", ...)` and `v(xdut.tail)`. `simulate(d)` reads the output files and returns:
 
 - gain, GBW, output CM and power;
 - the peak differential swing allowed by the headroom of M1 and M3;
 - `SNR = (A²/2)/Vn²`;
 - `FoM_S = SNR + 10·log10(GBW/P)`;
-- the smallest saturation margin `|Vds| − |Vdsat|`.
+- the smallest saturation margin `|Vds| − |Vdss|` (`vdss` is PSP103's saturation voltage).
 
 !!! warning "Why GBW is A0·f−3dB, not the 0 dB crossing"
     Large input devices couple the input to the outputs through `Cgd`. This flattens `|H|` just above 0 dB at high frequency, and pushes the 0 dB crossing far beyond the real gain-bandwidth product. An optimizer quickly learns to exploit that, so GBW is computed from the single-pole asymptote.
@@ -278,27 +290,27 @@ After the run, the whole final population is re-simulated and the `N_CLOSEST` di
 
 ## Results
 
-1920 evaluations in 53 s (8 workers). The closest design:
+1920 evaluations in 65 s (8 workers). The closest design:
 
 | | gm/id load | gm/id tail | L in / load / tail [µm] | W in / load / tail [µm] | I tail [µA] | R_CM [kΩ] |
 |---|---|---|---|---|---|---|
-| sizing | 6.05 | 6.47 | 0.5 / 0.28 / 4.0 | 261.8 / 13.6 / 155.8 | 201.1 | 249.2 |
+| sizing | 7.34 | 10.76 | 0.5 / 0.5 / 1.0 | 49.9 / 17.7 / 43.3 | 178.2 | 328.4 |
 
 | metric | target | ngspice |
 |---|---|---|
-| Differential gain [dB] | 36 | 36.05 (+0.1 %) |
-| GBW [MHz] | 500 | 418.1 (−16.4 %) |
-| Output CM [V] | 2.0 | 2.28 (+13.8 %) |
-| Power [µW] | 1200 | 1322 (+10.2 %) |
-| Input-referred noise [µVrms] | ≤ 20 | 19.66 (within the limit) |
-| **Spec error, RMS** | minimize | **10.62 %** |
-| Transient gain at 0.66 MHz [dB] | = AC gain, 36.00 | 36.00 |
-| Slew rate up / down [V/µs] | reference `I_TAIL/CL` = 402 | 269 / 269 |
-| Saturation margin [V] | > 0 | 0.17 |
-| Peak differential swing [V] | | 1.45 |
-| SNR [dB] | | 58.3 |
-| Area | minimize | 2014 µm² (44.9 µm × 44.9 µm) |
-| Schreier FoM [dB] | maximize | 173.3 |
+| Differential gain [dB] | 26 | 24.28 (−6.6 %) |
+| GBW [MHz] | 500 | 458.2 (−8.4 %) |
+| Output CM [V] | 0.6 | 0.59 (−1.0 %) |
+| Power [µW] | 400 | 417.3 (+4.3 %) |
+| Input-referred noise [µVrms] | ≤ 60 | 44.19 (within the limit) |
+| **Spec error, RMS** | minimize | **5.17 %** |
+| Transient gain at 2.8 MHz [dB] | = AC gain, 24.23 | 24.23 |
+| Slew rate up / down [V/µs] | reference `I_TAIL/CL` = 356 | 281 / 281 |
+| Saturation margin [V] | > 0 | 0.10 |
+| Peak differential swing [V] | | 0.39 |
+| SNR [dB] | | 51.6 |
+| Area | minimize | 637 µm² (25.2 µm × 25.2 µm) |
+| Schreier FoM [dB] | maximize | 172.1 |
 
 !!! info "Reading the trade-off"
-    The output CM is set by the loads, `VOCM = VDD − Vsg3`. Even at the lowest load gm/id allowed (6), `Vsg3` stays around 1.0 V, so `VOCM ≈ 2.28 V` and the 2.0 V target can't be reached in this topology. The optimizer accepts that error and balances it against GBW and power. To move the CM, change the topology (for example, add a CMFB amplifier) or widen `GMID_LOAD_BOUNDS`.
+    At 1.2 V the stack of tail, pair and load leaves little headroom: the peak differential swing is only 0.39 V, so SNR and FoM are lower than in a 3.3 V design. The gain is limited by the short channels: longer input and load devices would raise it, but they cost GBW for the same power. The optimizer lands about 6 % short on gain and 8 % short on GBW, inside the power and noise budgets.
